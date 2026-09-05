@@ -1,0 +1,77 @@
+# Settings
+
+Settings is how this farm is configured and governed. Nothing here
+is a daily action and nothing here raises an alarm. Problems still
+surface on Health. Most doors write nothing: they store reference
+data outside the event log.
+
+## If something is wrong
+
+- Light slots or Blackout slots feel like zero after you cleared
+  them -> blank means unknown, not zero. Do not type 0 unless the
+  building has no room.
+- The Admin phone cannot capture -> captures are confirmed on Farm.
+  Pairing here does not make the phone a writer.
+- Dock will not Start -> this machine is the sole writer. Do not
+  turn on a second writer. TLS on the LAN dock is declined. See
+  [refused](refused.md).
+- Scan Save did nothing you can see -> a blank field means leave as
+  is. Do not paste a host from memory.
+- You cannot find the farm folder -> **Open Backup & Export**, then
+  **Open folder**. Do not search another Windows user.
+
+## Doors on this tab
+
+### Trust & Ownership
+
+Four lines, as printed. This system will never:
+
+- let a second writer touch farm truth
+- hide the oldest unpaid debt
+- accept a soft number
+- let history be rewritten
+
+No door.
+
+### Farm — Shelf space
+
+- **Light slots** / **Blackout slots** then **Save** - writes
+  nothing - shelf config. Blank means unknown, not zero.
+
+### Field terminal
+
+- **Pair the Admin phone** - writes nothing - pairing record on
+  this machine.
+- **Copy link** / **Copy token** - writes nothing - clipboard. The
+  token is shown only while this pairing is live.
+- **Retire the Admin phone** - writes nothing.
+- **Mode: Solo** - not a control. Captures are confirmed on Farm.
+
+### Dock
+
+- **Start** / **Stop** - writes nothing - the local dock process.
+- This address is not encrypted. Use it only on Wi-Fi you trust.
+
+### Connections
+
+- **Scan endpoint URL** - a field. Do not copy a host onto this
+  page.
+- **Pull token** - a field. Blank means leave as is. The page never
+  re-shows a saved token.
+- **Save** - writes nothing - scan config on this machine.
+
+### Backup & Export
+
+- **Open Backup & Export** - writes nothing until a door inside the
+  sheet. Behind it: the farm folder and **Open folder**, the
+  snapshots and **Restore**, **Bring in a bundle**, and **Export
+  everything**. Restore refuses to merge two different farms.
+  Snapshots are not a backup. See [integrity](integrity.md).
+
+### Farm name
+
+- **Save farm name** - writes nothing - printed at the top of every
+  invoice. Reference data on this machine, not an event. Empty means
+  invoices refuse to show.
+
+![Settings, Trust & Ownership](../images/settings/settings1.png)

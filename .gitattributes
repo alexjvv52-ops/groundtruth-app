@@ -1,0 +1,8 @@
+# Source lands LF in the repository regardless of the checkout platform.
+# Added by B9. Existing files are NOT renormalised — operator order — so the
+# tree stays mixed until each file is next touched.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary

@@ -1,0 +1,11 @@
+# TOOLCHAIN-1. Pinned to the toolchain HYGIENE-1 went green under.
+#
+# `cargo fmt --all -- --check` and `cargo clippy -D warnings` are both clean
+# today against rustfmt 1.9.0-stable and clippy 0.1.97, shipped with 1.97.1.
+# Those gates cost six stops and two full test cycles to reach. `stable` moves
+# on every `rustup update`; a version does not. Upgrading is a deliberate act
+# with its own fence, not something a Tuesday morning does to 78 files.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

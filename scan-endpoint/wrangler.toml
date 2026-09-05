@@ -1,0 +1,17 @@
+name = "scan-endpoint"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+[vars]
+REDIRECT_URL = "https://example.com"
+# GT-D18: the one line of farm identity on the customer page. The page and its
+# write door refuse to serve until this is set. No other branding exists.
+FARM_NAME = ""
+
+[[d1_databases]]
+binding = "DB"
+database_name = "scan-endpoint"
+# C1: the live id never lands on a tracked file. The real one for this desk
+# lives in scan-endpoint/wrangler.toml.local (gitignored, not read by wrangler
+# automatically — pass it with --config or paste when deploying).
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
