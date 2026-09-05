@@ -5,9 +5,10 @@
  * The posted `total` is only used to detect a stale page (409 if it disagrees).
  */
 
-// Live keys are refused. Flipping this is a deliberate code change, reviewed and
-// redeployed — never an environment variable, never a request parameter.
-export const ALLOW_LIVE_KEYS = false;
+// Live keys are accepted (GT-D13-R supersedes GT-D13). Flipping this back is a
+// deliberate code change, reviewed and redeployed — never an environment
+// variable, never a request parameter.
+export const ALLOW_LIVE_KEYS = true;
 
 const MAX_BODY_BYTES = 8 * 1024;
 const REF_RE = /^[A-Za-z0-9_-]{1,200}$/;

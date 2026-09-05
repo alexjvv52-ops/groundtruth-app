@@ -346,7 +346,7 @@ fn shop_door_desk_wiring_exists_once_and_the_sheet_stays_unmounted() {
             .count(),
         1
     );
-    assert!(money_src.contains("Test mode (GT-D13): only a Stripe test card can pay this link."));
+    assert!(money_src.contains("A test key takes test cards only. A live key takes real money."));
     // GT-D23 holds on the desk: the Money door never reaches the cart
     // composer, an offer, the checkout address, or the sheet.
     for banned in [

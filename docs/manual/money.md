@@ -19,7 +19,8 @@ unpaid. Unpriced stays unpriced. A payment link is not a payment.
 - Leftover List leftover refuses -> one listing per crop-day, and
   ounces cannot exceed that day's harvest. Do not list a second time.
 - Connect Stripe Continue is dead -> the Restricted key field is
-  empty. Do not paste a live key. Test mode only.
+  empty. A test key or a live key is accepted; a live key moves
+  real money.
 
 ## Doors on this tab
 
@@ -48,7 +49,7 @@ Heading only. The converting taps are on the row.
 Writes nothing. The key is config on this machine, not an event.
 
 - **Continue** - preview only.
-- **Connect this account** - stores the test key.
+- **Connect this account** - stores the key.
 - **Use a different key** / **Cancel** - writes nothing.
 
 ![Money, Connect Stripe](../images/money/money-stripe-connect.png)

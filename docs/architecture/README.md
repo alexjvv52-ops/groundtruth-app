@@ -32,7 +32,7 @@ One register. Wholesale orders move through ordered, delivered, paid, and
 voided; leftover listings are priced and closed by link or by cash; an
 invoice is rendered from the row, never stored as a second truth, and
 carries a verify-replay footer. Payment links are minted from an existing
-row with a restricted test-mode key; the poll attaches a payment to that
+row with a restricted key, test or live; the poll attaches a payment to that
 row and nothing else; online capacity is consumed only after payment
 confirms. A blank price cannot enter the record path, and neither
 settlement door settles an unpriced line.

@@ -3322,27 +3322,39 @@ mod tests {
 
     #[test]
     #[allow(clippy::assertions_on_constants)] // H-17: tripwire, not a tautology.
-                                              // Fails loudly if ALLOW_LIVE_KEYS is ever flipped. Same class as c13's pin.
-    fn rk_live_refused_while_allow_live_keys_false() {
-        assert!(!money::ALLOW_LIVE_KEYS);
+                                              // Fails loudly if ALLOW_LIVE_KEYS is ever flipped back. Same class as c13's pin.
+    fn rk_live_accepted_while_allow_live_keys_true() {
+        assert!(money::ALLOW_LIVE_KEYS);
         let conn = mem();
-        let err = money::validate_restricted_key("rk_live_abc123").unwrap_err();
-        assert!(err.contains("test mode"));
-        assert!(err.contains("Live keys are not accepted"));
-        assert!(stored_key(&conn).is_none() || stored_key(&conn).as_deref() == Some(""));
-
-        let store_err = money::store_stripe_key(
+        assert_eq!(
+            money::validate_restricted_key("rk_live_abc123").unwrap(),
+            "live"
+        );
+        money::store_stripe_key(
             &conn,
             "rk_live_abc123",
             &money::AccountInfo {
                 account_id: "acct_x".into(),
-                account_name: "Nope".into(),
+                account_name: "Live Farm".into(),
                 mode: "live".into(),
             },
         )
+        .unwrap();
+        assert_eq!(stored_key(&conn).as_deref(), Some("rk_live_abc123"));
+        // The key's mode still has to match the account it came from.
+        let conn2 = mem();
+        let mismatch = money::store_stripe_key(
+            &conn2,
+            "rk_live_abc123",
+            &money::AccountInfo {
+                account_id: "acct_y".into(),
+                account_name: "Wrong Mode".into(),
+                mode: "test".into(),
+            },
+        )
         .unwrap_err();
-        assert!(store_err.contains("test mode") || store_err.contains("Live keys"));
-        assert!(stored_key(&conn).is_none() || stored_key(&conn).as_deref() == Some(""));
+        assert!(mismatch.contains("did not match"), "{mismatch}");
+        assert!(stored_key(&conn2).is_none() || stored_key(&conn2).as_deref() == Some(""));
     }
 
     #[test]

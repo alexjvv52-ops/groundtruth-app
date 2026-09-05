@@ -56,7 +56,7 @@ in plain words, when the data cannot support an answer.
   the full method statement underneath. No trays or no payments in the
   window: it refuses rather than guesses.
 - **Selling** — on Money: wholesale orders and leftover listings, each with
-  a **Payment link** (Stripe restricted key, test mode) or cash **Paid…**.
+  a **Payment link** (Stripe restricted key, test or live) or cash **Paid…**.
   Online capacity is reserved only when payment actually confirms — never
   by a conversation or a cart.
 - **Marketing** — venues, sample drops, follow-ups, and a stage ladder from
@@ -111,10 +111,11 @@ software is free. Click "More info", then "Run anyway".
 5. To send a **Payment link** instead of taking cash, connect Stripe: on
    **Money**, under Wholesale, press **Connect Stripe**. The sheet names
    the exact restricted-key permissions to turn on, so there is nothing to
-   look up here. Test mode only — a live key is refused
-   (`docs/manual/refused.md`). The key is config on this machine, not an
-   event: it stays in that same farm folder and is scrubbed out of any
-   bundle you export, so you re-enter it after a restore.
+   look up here. A test key or a live key is accepted (GT-D13-R) — a test
+   key takes test cards only, a live key takes real money. The key is
+   config on this machine, not an event: it stays in that same farm folder
+   and is scrubbed out of any bundle you export, so you re-enter it after
+   a restore.
 
 ## Your data
 

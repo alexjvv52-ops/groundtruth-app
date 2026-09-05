@@ -7,7 +7,6 @@ second product philosophy; they are packaging, reach, and scope.
 |------|-------|----------------|
 | Public installer pack | The app is built from source. An unsigned Windows installer builds locally, but there is deliberately no download link yet. | A published release with checksums, after the security sweep. |
 | Security sweep | Not yet run as a formal pass. It is the last blocker before a public home for the repository. | A signed sweep of the tree for anything that must never ship. |
-| Live payment keys | Test mode only. Payment links and the poll work against restricted test keys; live keys are refused by a standing decision. | Its own chapter, last, after everything else the operator names, and only with a test farm first. |
 | Dead-laptop recovery drill | Written, never run end to end, and removed from scope for now. Restore from an export bundle is tested; the full cold-machine drill is not. | Running the drill on a fresh machine and recording the result. Until then, keep the old machine or a USB copy after any move. |
 | Windows only, one machine, one user | By design for v0.1. | Not a residual — a scope line. A read-only second presence is a later, signed piece of work. |
 | Offline See on the phone | The phone sees the desk's snapshot only while on the same network with the desk running. TLS on the dock was declined; an offline See surface would need its own signature. | A signed decision, if the board ever wants it. |

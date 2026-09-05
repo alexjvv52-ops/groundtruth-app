@@ -18,9 +18,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
-/// Live Stripe keys are refused. Flipping this is a deliberate code change,
-/// reviewed and rebuilt — never a setting, never a checkbox, never a flag file.
-pub const ALLOW_LIVE_KEYS: bool = false;
+/// Live Stripe keys are accepted (GT-D13-R supersedes GT-D13). Flipping this
+/// back is a deliberate code change, reviewed and rebuilt — never a setting,
+/// never a checkbox, never a flag file.
+pub const ALLOW_LIVE_KEYS: bool = true;
 
 /// Verify-replay compares every column (apply_stripe_fact_unapplied).
 pub const STRIPE_UNAPPLIED_FACTS_COLUMNS: &[&str] = &[
@@ -235,7 +236,8 @@ pub trait StripeGateway: Send + Sync {
 
 // --- Key validation and farm-file storage ----------------------------------
 
-/// Validate key shape and test-mode lock. Returns `"test"` or `"live"`.
+/// Validate key shape. Test and live restricted keys are both accepted
+/// (GT-D13-R); `ALLOW_LIVE_KEYS` is the switch. Returns `"test"` or `"live"`.
 /// Never logs or echoes the key.
 pub fn validate_restricted_key(key: &str) -> Result<&'static str, String> {
     let key = key.trim();

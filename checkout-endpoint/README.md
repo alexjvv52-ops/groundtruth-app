@@ -2,10 +2,11 @@
 
 Optional history. The shop page door in Groundtruth is unmounted — do not remount (GT-D24). Nothing on the desk sends an operator here; this Worker is kept as the retail checkout endpoint's record.
 
-Live keys are refused by design (`ALLOW_LIVE_KEYS = false` in src/handler.js).
-That is a signed decision, not a default: GT-D13 in `docs/GT-D-SERIES.md`
-(Phase 4 Path B, 2026-08-13). Do not flip it without a superseding signed
-decision recorded in the same ledger.
+Live keys are accepted (`ALLOW_LIVE_KEYS = true` in src/handler.js). That is a
+signed decision, not a default: GT-D13-R in `docs/GT-D-SERIES.md`, which
+supersedes GT-D13 (Phase 4 Path B, 2026-08-13). Test keys still work. Do not
+flip it back without a superseding signed decision recorded in the same
+ledger.
 
 This is a Cloudflare Worker that creates Stripe Checkout sessions. The desktop app is complete without it. It holds no farm data and stores nothing.
 

@@ -1402,7 +1402,7 @@ export function Money({
                       </svg>
                     );
                   })()}
-                  <p className="text-sm text-muted-foreground">Test mode (GT-D13): only a Stripe test card can pay this link.</p>
+                  <p className="text-sm text-muted-foreground">A test key takes test cards only. A live key takes real money.</p>
                 </div>
               )}
               {reversingId === o.id && (() => {
@@ -2021,7 +2021,7 @@ export function Money({
                       >
                         Paid…
                       </Button>
-                      <p className="text-sm text-muted-foreground">Test mode (GT-D13): only a Stripe test card can pay this link.</p>
+                      <p className="text-sm text-muted-foreground">A test key takes test cards only. A live key takes real money.</p>
                     </div>
                   )}
                   {l.paidAt == null && l.paymentLinkUrl != null && (
@@ -2066,7 +2066,7 @@ export function Money({
                       >
                         Paid…
                       </Button>
-                      <p className="text-sm text-muted-foreground">Test mode (GT-D13): only a Stripe test card can pay this link.</p>
+                      <p className="text-sm text-muted-foreground">A test key takes test cards only. A live key takes real money.</p>
                     </div>
                   )}
                   {loPayingId === l.listingId && l.paidAt == null && (
@@ -2154,7 +2154,7 @@ export function Money({
                 </Button>
               </div>
             )}
-            <p className="text-sm text-muted-foreground">Test mode (GT-D13): only a Stripe test card can pay this link.</p>
+            <p className="text-sm text-muted-foreground">A test key takes test cards only. A live key takes real money.</p>
             {leftoverOpen && (
               <>
                 <label className="flex flex-col gap-1 text-sm">
@@ -2464,10 +2464,10 @@ export function Money({
           <CardTitle>Stripe money not recorded</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {/* B1-F2 (D13) — the GT-D13 rehearsal line lives with the Stripe
-              record it describes, not in the daily summary. Wording untouched. */}
+          {/* B1-F2 (D13) — the Retail paid-orders line lives with the Stripe
+              record it describes, not in the daily summary. */}
           <p className="text-sm text-muted-foreground">
-            Retail: {retailOrders.length} paid orders (test rehearsal — GT-D13)
+            Retail: {retailOrders.length} paid orders
           </p>
           <ul className="flex flex-col gap-3 text-sm">
             {(showAllUnapplied ? unapplied : unapplied.slice(0, MONEY_LIST_VISIBLE)).map((f) => (
@@ -2650,8 +2650,9 @@ export function Money({
                 </p>
                 <ol className="list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
                   <li>
-                    In the Stripe Dashboard (test mode), open Developers → API keys
-                    → Restricted keys → Create restricted key.
+                    In the Stripe Dashboard, open Developers → API keys →
+                    Restricted keys → Create restricted key. Test mode for a
+                    rehearsal key; live mode for one that takes real money.
                   </li>
                   <li>
                     Turn on <span className="text-foreground">write</span> for
@@ -2665,7 +2666,8 @@ export function Money({
                   <li>Create the key and paste it below.</li>
                 </ol>
                 <p className="text-base text-muted-foreground">
-                  Farm OS is in test mode. Live keys are not accepted yet.
+                  Farm OS accepts a test key or a live key. A live key moves real
+                  money the first time a customer pays.
                 </p>
                 <label className="flex flex-col gap-2">
                   <span className="text-sm font-medium">Restricted key</span>
@@ -2675,7 +2677,7 @@ export function Money({
                     spellCheck={false}
                     value={connectKey}
                     onChange={(e) => setConnectKey(e.target.value)}
-                    placeholder="rk_test_…"
+                    placeholder="rk_test_… or rk_live_…"
                     className="min-h-12 rounded-md border border-input bg-card px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   />
                 </label>

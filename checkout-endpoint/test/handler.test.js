@@ -10,7 +10,7 @@ const ORIGIN = "https://shop.example.com";
 const RESTRICTED_PREFIX = ["r", "k", "_"].join("");
 const SECRET_PREFIX = ["s", "k", "_"].join("");
 const KEY = `${RESTRICTED_PREFIX}test_unit_fixture_not_a_real_key`;
-const LIVE_KEY = `${RESTRICTED_PREFIX}live_should_be_refused`;
+const LIVE_KEY = `${RESTRICTED_PREFIX}live_unit_fixture_not_a_real_key`;
 const SECRET_KEY = `${SECRET_PREFIX}test_secret`;
 
 const baseEnv = {
@@ -270,21 +270,23 @@ describe("checkout handler", () => {
     }
   });
 
-  it("live restricted key refused while ALLOW_LIVE_KEYS is false", async () => {
-    assert.equal(ALLOW_LIVE_KEYS, false);
+  it("live restricted key accepted while ALLOW_LIVE_KEYS is true", async () => {
+    assert.equal(ALLOW_LIVE_KEYS, true);
     const check = validateStripeKey(LIVE_KEY);
-    assert.equal(check.ok, false);
-    assert.match(check.reason, /Live keys are not accepted/);
-
+    assert.equal(check.ok, true);
+    assert.equal(check.key, LIVE_KEY);
     const { fetchImpl, calls } = fakeStripe();
     const res = await handleCheckout(
       postRequest(cart()),
       { ...baseEnv, STRIPE_RESTRICTED_KEY: LIVE_KEY },
       fetchImpl,
     );
-    assert.equal(res.status, 503);
-    assert.equal(stripeCalls(calls).length, 0);
-
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(Object.keys(body).sort(), ["url"]);
+    assert.equal(sessionCalls(calls).length, 1);
+    assert.ok(stripeCalls(calls).length > 0);
+    assert.ok(!JSON.stringify(body).includes(LIVE_KEY));
     const sk = validateStripeKey(SECRET_KEY);
     assert.equal(sk.ok, false);
     assert.match(sk.reason, /secret key/i);

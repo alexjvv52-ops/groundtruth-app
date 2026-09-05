@@ -301,6 +301,34 @@ Roadmap, Path B).
 
 ---
 
+## GT-D13-R — The live key door opens: live restricted keys are accepted, test keys still work
+
+**Decision.** Chosen 2026-09-05 by operator order. `ALLOW_LIVE_KEYS = true` at
+both sites — `src-tauri/src/money.rs` in the app and
+`checkout-endpoint/src/handler.js` in the checkout Worker. A live restricted
+key (`rk_live_…`) is accepted by the same door that has always accepted a test
+key. Test keys still work and are still the right key for a rehearsal farm.
+Nothing else about the money path moves: the key is config on this machine and
+never an event, it is still scrubbed out of every export bundle, secret keys
+are still refused, and the mode a farm is connected in is still printed on
+Money beside the account name. This supersedes GT-D13, which held the flip shut
+and named its own release condition — a future signed decision that names it.
+
+**Forbids.** A second live door. The flip is these two consts and nothing else:
+no setting, no checkbox, no environment variable, no request parameter, no flag
+file. Live payment on for one install and off for another is a code change,
+reviewed and rebuilt, the same door for every install.
+
+**Prevents.** A door that opens by configuration. GT-D13's real guarantee was
+never "test mode forever" — it was that the mode a farm runs in cannot be
+changed by anyone who can edit a settings file, a deploy variable, or a
+request body. That guarantee is untouched here, and it is the reason this flip
+is written into the ledger at all: the decision moved, the mechanism did not.
+
+**Signed** 2026-09-05 (`gt-d13-live`, GT-D13 LIVE).
+
+---
+
 ## GT-D14 — The wholesale door: four order-book kinds, one money register, one capacity pool
 
 **Decision.** Four register-domain kinds are admitted for the wholesale order
