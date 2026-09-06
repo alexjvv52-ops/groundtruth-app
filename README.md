@@ -68,7 +68,15 @@ in plain words, when the data cannot support an answer.
 
 ## Install on Windows
 
-Before you build, you need:
+Download `Groundtruth_0.1.0_x64-setup.exe` from the Releases page and run it:
+https://github.com/alexjvv52-ops/groundtruth-app/releases
+Windows x64 only; it installs under a normal user account, no administrator needed.
+
+Windows will warn you about the installer. That is expected: the installer
+is not code-signed, because signing costs money every year and this
+software is free. Click "More info", then "Run anyway".
+
+Or build it yourself. Before you build, you need:
 
 - **Git** — to clone this repo.
 - **Windows** — there is no Mac or Linux build.
@@ -79,16 +87,11 @@ Before you build, you need:
 
 Then open a new Command Prompt or PowerShell so Node and Rust are on PATH.
 
-Right now Groundtruth is built from source (Node + Rust: `npm install`,
-then `npm run tauri build`). The bundle lands under Cargo's target dir —
+To build from source: `npm install`, then `npm run tauri build` (Node +
+Rust). The bundle lands under Cargo's target dir —
 `src-tauri/target/release/bundle/` by default, with `nsis/` and `msi/`
 inside it; a CARGO_TARGET_DIR on the build machine moves it.
 After the build, run the generated installer in `nsis/` or `msi/`.
-A downloadable public release is the next milestone — until it exists, there is deliberately no download link here.
-
-Windows will warn you about the installer. That is expected: the installer
-is not code-signed, because signing costs money every year and this
-software is free. Click "More info", then "Run anyway".
 
 ## Your first 15 minutes
 
@@ -129,6 +132,7 @@ the folder to a USB stick or your own cloud folder on a schedule you
 decide. "Export everything" produces a portable bundle — database, full
 event log, receipts, costs/mileage/assets CSVs with tax lines filled in,
 and a checksum manifest — readable by any SQLite tool or spreadsheet.
+A raw copy of that folder — USB stick or cloud — carries your Stripe key; "Export everything" is the scrubbed copy.
 
 If your laptop dies: install on a new machine, choose "Restore a backup",
 and bring in your bundle. The app refuses files that are not its own
