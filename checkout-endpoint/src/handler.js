@@ -19,13 +19,25 @@ const RESTRICTED_PREFIX = ["r", "k", "_"].join("");
 const SECRET_PREFIX = ["s", "k", "_"].join("");
 const LIVE_RESTRICTED_PREFIX = `${RESTRICTED_PREFIX}live_`;
 
+// J3 PRICE-GATE (SENTENCE B): every stale-page refusal — total drift, harvest
+// date mismatch, missing harvest date, past harvest date — is one 409 and one
+// line. The worker only refuses; attribution stays on the PC.
+const STALE_PAGE =
+  "The prices on this page are out of date. Reload and try again.";
+
 /**
  * @param {Request} request
  * @param {Record<string, string>} env
  * @param {typeof fetch} fetchImpl
+ * @param {() => string} nowIso
  * @returns {Promise<Response>}
  */
-export async function handleCheckout(request, env, fetchImpl = fetch) {
+export async function handleCheckout(
+  request,
+  env,
+  fetchImpl = fetch,
+  nowIso = () => new Date().toISOString(),
+) {
   const origin = request.headers.get("Origin");
   const allowed = env.ALLOWED_ORIGIN || "";
 
@@ -85,6 +97,14 @@ export async function handleCheckout(request, env, fetchImpl = fetch) {
   const cart = validated.cart;
   const refLog = truncRef(cart.reference);
 
+  // J3 DATE A: the UTC calendar date from the injected clock — no TZ, no
+  // second clock. A harvest date already behind that date is a stale page.
+  const today = String(nowIso()).slice(0, 10);
+  if (cart.harvestDate < today) {
+    console.log("POST", 409, refLog);
+    return jsonResponse(409, { error: STALE_PAGE }, origin, allowed);
+  }
+
   try {
     const prices = [];
     for (const line of cart.lines) {
@@ -101,6 +121,15 @@ export async function handleCheckout(request, env, fetchImpl = fetch) {
           origin,
           allowed,
         );
+      }
+      // J3 MISSING A + COMPARE: the Price must name this page's harvest date,
+      // as a string, exactly. The worker reads it only to refuse.
+      const meta = price.value.metadata;
+      const priceHarvest =
+        meta && typeof meta === "object" ? meta.harvest_date : undefined;
+      if (typeof priceHarvest !== "string" || priceHarvest !== cart.harvestDate) {
+        console.log("POST", 409, refLog);
+        return jsonResponse(409, { error: STALE_PAGE }, origin, allowed);
       }
       const currency = (price.value.currency || "").toLowerCase();
       if (currency !== cart.currency) {
@@ -134,15 +163,7 @@ export async function handleCheckout(request, env, fetchImpl = fetch) {
     }
     if (computed !== cart.total) {
       console.log("POST", 409, refLog);
-      return jsonResponse(
-        409,
-        {
-          error:
-            "The prices on this page are out of date. Reload and try again.",
-        },
-        origin,
-        allowed,
-      );
+      return jsonResponse(409, { error: STALE_PAGE }, origin, allowed);
     }
 
     const session = await createCheckoutSession(fetchImpl, keyCheck.key, {

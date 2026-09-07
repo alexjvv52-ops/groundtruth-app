@@ -25,7 +25,23 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+
+/// J2 IMPORT-PATH-HARDEN (SIZE-A). A bundle entry that is not a receipt is
+/// read only up to this many bytes; a receipt keeps the desk's own receipt law,
+/// `costs::MAX_RECEIPT_BYTES`. manifest.json is read under this cap too. Every
+/// cap is checked against metadata before any read, so an oversized entry is
+/// refused without ever being loaded.
+pub const MAX_BUNDLE_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
+
+/// J2 (DEPTH-A). An honest bundle is root files plus `receipts/<file>`: two
+/// path components. A listed path with more is refused; the walk never enters
+/// a directory below `receipts/`.
+pub const MAX_BUNDLE_DEPTH: usize = 2;
+
+/// J2 (SENT-A). Refusal details spoken inside the ManifestMismatch frame.
+pub const PATH_NOT_PLAIN_DETAIL: &str = "the path is not a plain relative path inside the bundle";
+pub const PATH_TOO_DEEP_DETAIL: &str = "is nested deeper than a Groundtruth bundle goes";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -307,10 +323,13 @@ fn copy_receipts_into_farm(bundle_dir: &Path, farm_dir: &Path) -> Result<i64, St
     let entries = fs::read_dir(&source).map_err(|e| e.to_string())?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-        if !path.is_file() {
+        // J2 (LINK-A): the entry's own type, never the target's. A link in
+        // receipts/ is skipped — never followed, read or copied.
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        if file_type.is_symlink() || !file_type.is_file() {
             continue;
         }
+        let path = entry.path();
         let name = path
             .file_name()
             .and_then(|n| n.to_str())
@@ -347,7 +366,9 @@ fn build_plan(conn: &Connection, bundle_dir: &Path) -> Result<ImportPlan, String
 
     // Step 1 — manifest contract both directions.
     let manifest = read_manifest(bundle_dir)?;
-    refusals.extend(check_manifest(bundle_dir, &manifest)?);
+    let manifest_refusals = check_manifest(bundle_dir, &manifest)?;
+    let manifest_clean = manifest_refusals.is_empty();
+    refusals.extend(manifest_refusals);
 
     // Step 2 — schema version.
     if manifest.app_schema_version != db::SCHEMA_VERSION {
@@ -355,6 +376,14 @@ fn build_plan(conn: &Connection, bundle_dir: &Path) -> Result<ImportPlan, String
             bundle: manifest.app_schema_version,
             this_app: db::SCHEMA_VERSION,
         });
+    }
+
+    // J2 (GATE-A): a manifest the bundle does not match is the whole answer.
+    // Nothing below this line touches a bundle file — no VACUUM copy of
+    // farm.db into the live farm's scratch, no events.jsonl in memory — until
+    // the manifest is clean. The refusals collected so far are the plan.
+    if !manifest_clean {
+        return manifest_refused_plan(bundle_dir, &manifest, refusals);
     }
 
     // Step 3 — log versus database via the paths form (no status file written
@@ -559,11 +588,82 @@ fn count_event_lines(text: &str) -> i64 {
     text.lines().filter(|l| !l.trim().is_empty()).count() as i64
 }
 
+/// J2 (GATE-A): the plan for a bundle whose manifest is not clean. No file
+/// below the manifest was read, so every count is zero and Apply is closed.
+fn manifest_refused_plan(
+    bundle_dir: &Path,
+    manifest: &Manifest,
+    refusals: Vec<ImportRefusal>,
+) -> Result<ImportPlan, String> {
+    let explanations: Vec<String> = refusals.iter().map(explain_refusal).collect();
+    let bundle_path = bundle_dir
+        .to_str()
+        .ok_or_else(|| "bundle path is not valid UTF-8".to_string())?
+        .to_string();
+    Ok(ImportPlan {
+        bundle_path,
+        bundle_exported_at: manifest.exported_at.clone(),
+        events_in_bundle: 0,
+        shared_event_ids: 0,
+        already_present_identical: 0,
+        would_be_added: 0,
+        foreign_records_in_bundle: 0,
+        refusals,
+        can_apply: false,
+        explanations,
+    })
+}
+
 fn read_manifest(bundle_dir: &Path) -> Result<Manifest, String> {
     let path = bundle_dir.join("manifest.json");
+    // J2 (SIZE-A, LINK-A): the manifest is a regular file read under the same
+    // cap as any other entry — never through a link, never whole first.
+    let meta =
+        fs::symlink_metadata(&path).map_err(|e| format!("could not read manifest.json: {e}"))?;
+    if !meta.file_type().is_file() {
+        return Err("could not read manifest.json: not a regular file".to_string());
+    }
+    if meta.len() > MAX_BUNDLE_ENTRY_BYTES {
+        return Err(format!(
+            "could not read manifest.json: {}",
+            over_cap_detail(meta.len(), MAX_BUNDLE_ENTRY_BYTES)
+        ));
+    }
     let text =
         fs::read_to_string(&path).map_err(|e| format!("could not read manifest.json: {e}"))?;
     serde_json::from_str(&text).map_err(|e| format!("manifest.json is not valid: {e}"))
+}
+
+/// J2 (PATH-A). The manifest promises a plain relative path with forward
+/// slashes (export::ManifestFile). One rule, checked on the string before any
+/// join: non-empty, no backslash, no NUL, and every component is a plain name —
+/// so `..`, `.`, a root, a drive or UNC prefix and an empty segment are all
+/// refused before the filesystem is asked anything.
+fn is_plain_bundle_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.contains('\\')
+        && !path.contains('\0')
+        && Path::new(path)
+            .components()
+            .all(|c| matches!(c, Component::Normal(_)))
+}
+
+/// J2 (SIZE-A). Receipts keep the desk's receipt law; everything else takes
+/// the bundle cap.
+fn entry_cap(path: &str) -> u64 {
+    if path.starts_with("receipts/") {
+        crate::costs::MAX_RECEIPT_BYTES
+    } else {
+        MAX_BUNDLE_ENTRY_BYTES
+    }
+}
+
+/// J2 (SENT-A). The over-cap detail, in whole megabytes like the receipt law.
+fn over_cap_detail(len: u64, cap: u64) -> String {
+    format!(
+        "is {len} bytes; Groundtruth reads bundle files up to {} MB",
+        cap / (1024 * 1024)
+    )
 }
 
 fn check_manifest(bundle_dir: &Path, manifest: &Manifest) -> Result<Vec<ImportRefusal>, String> {
@@ -572,26 +672,56 @@ fn check_manifest(bundle_dir: &Path, manifest: &Manifest) -> Result<Vec<ImportRe
 
     for entry in &manifest.files {
         listed.insert(entry.path.clone());
-        let abs = bundle_dir.join(entry.path.replace('/', std::path::MAIN_SEPARATOR_STR));
-        if !abs.is_file() {
+        // J2 (PATH-A, DEPTH-A): judged on the manifest string, before the join.
+        if !is_plain_bundle_path(&entry.path) {
             refusals.push(ImportRefusal::ManifestMismatch {
                 path: entry.path.clone(),
-                detail: "listed in the manifest but missing from the bundle".into(),
+                detail: PATH_NOT_PLAIN_DETAIL.into(),
             });
             continue;
         }
-        let bytes = fs::read(&abs).map_err(|e| e.to_string())?;
-        if bytes.len() as u64 != entry.size_bytes {
+        if Path::new(&entry.path).components().count() > MAX_BUNDLE_DEPTH {
+            refusals.push(ImportRefusal::ManifestMismatch {
+                path: entry.path.clone(),
+                detail: PATH_TOO_DEEP_DETAIL.into(),
+            });
+            continue;
+        }
+        let abs = bundle_dir.join(entry.path.replace('/', std::path::MAIN_SEPARATOR_STR));
+        // J2 (LINK-A): symlink_metadata never follows. A link, a directory or
+        // anything but a regular file is missing — never read, never hashed.
+        let meta = match fs::symlink_metadata(&abs) {
+            Ok(m) if m.file_type().is_file() => m,
+            _ => {
+                refusals.push(ImportRefusal::ManifestMismatch {
+                    path: entry.path.clone(),
+                    detail: "listed in the manifest but missing from the bundle".into(),
+                });
+                continue;
+            }
+        };
+        // J2 (SIZE-A): the length compare now runs before the read — same
+        // sentence, no bytes loaded yet — and the cap after it.
+        if meta.len() != entry.size_bytes {
             refusals.push(ImportRefusal::ManifestMismatch {
                 path: entry.path.clone(),
                 detail: format!(
                     "size is {} bytes; manifest says {}",
-                    bytes.len(),
+                    meta.len(),
                     entry.size_bytes
                 ),
             });
             continue;
         }
+        let cap = entry_cap(&entry.path);
+        if meta.len() > cap {
+            refusals.push(ImportRefusal::ManifestMismatch {
+                path: entry.path.clone(),
+                detail: over_cap_detail(meta.len(), cap),
+            });
+            continue;
+        }
+        let bytes = fs::read(&abs).map_err(|e| e.to_string())?;
         let digest = sha256_hex(&bytes);
         if digest != entry.sha256 {
             refusals.push(ImportRefusal::ManifestMismatch {
@@ -619,14 +749,27 @@ fn check_manifest(bundle_dir: &Path, manifest: &Manifest) -> Result<Vec<ImportRe
 
 fn walk_bundle_files(bundle_dir: &Path) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    fn walk(base: &Path, dir: &Path, out: &mut BTreeSet<String>) {
+    // J2 (LINK-A, DEPTH-A): `depth` is the component count of the entries in
+    // `dir` — 1 at the bundle root, 2 inside receipts/. A link is skipped
+    // without being followed, and no directory below MAX_BUNDLE_DEPTH is
+    // entered: an honest bundle has nothing there, and a listed path that deep
+    // was already refused by check_manifest.
+    fn walk(base: &Path, dir: &Path, depth: usize, out: &mut BTreeSet<String>) {
         let Ok(entries) = fs::read_dir(dir) else {
             return;
         };
         for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_symlink() {
+                continue;
+            }
             let path = entry.path();
-            if path.is_dir() {
-                walk(base, &path, out);
+            if file_type.is_dir() {
+                if depth < MAX_BUNDLE_DEPTH {
+                    walk(base, &path, depth + 1, out);
+                }
             } else if let Ok(rel) = path.strip_prefix(base) {
                 let s = rel
                     .components()
@@ -637,7 +780,7 @@ fn walk_bundle_files(bundle_dir: &Path) -> BTreeSet<String> {
             }
         }
     }
-    walk(bundle_dir, bundle_dir, &mut out);
+    walk(bundle_dir, bundle_dir, 1, &mut out);
     out
 }
 

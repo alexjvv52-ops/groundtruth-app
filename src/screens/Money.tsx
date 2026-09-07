@@ -144,6 +144,12 @@ function unappliedSentence(status: string, stripeObject: string): string {
   if (status === "leftover_amount_mismatch") {
     return "A payment link was paid for an amount that is not the leftover listing's total. Nothing was recorded. Record it with Paid…";
   }
+  // J4 REF-DUP-FACT (SENTENCE A): a second Stripe session under a cart
+  // reference Farm OS already recorded. The first order stands; the twin is
+  // named here, never booked, and never as the raw token.
+  if (status === "duplicate_reference") {
+    return "A payment arrived for a cart Farm OS had already recorded. The first order stands; nothing else was recorded, and the money is at Stripe.";
+  }
   return status;
 }
 

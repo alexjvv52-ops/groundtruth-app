@@ -172,6 +172,15 @@ pub fn set_offer_with<G: StripeGateway>(
     )
     .map_err(|e| e.to_string())?;
 
+    // J3 PRICE-GATE: the Price id this row just dropped is archived at Stripe
+    // after the row write, best-effort like J1's deactivate_link. Read above,
+    // before the overwrite; a Stripe error never rolls the offer back.
+    if let Some((_, Some(old_price_id))) = &existing {
+        if !old_price_id.is_empty() {
+            let _ = gateway.archive_price(old_price_id);
+        }
+    }
+
     Ok(OfferView {
         id: Some(offer_id),
         harvest_date: harvest_date.to_string(),
@@ -193,14 +202,14 @@ pub fn remove_offer(conn: &mut Connection, offer_id: &str) -> Result<(), String>
 
 pub fn remove_offer_with<G: StripeGateway>(
     conn: &mut Connection,
-    _gateway: &G,
+    gateway: &G,
     offer_id: &str,
 ) -> Result<(), String> {
-    let harvest_date: Option<String> = conn
+    let held: Option<(String, Option<String>)> = conn
         .query_row(
-            "SELECT harvest_date FROM offers WHERE id = ?1",
+            "SELECT harvest_date, stripe_price_id FROM offers WHERE id = ?1",
             [offer_id],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()
         .map_err(|e| e.to_string())?;
@@ -215,9 +224,16 @@ pub fn remove_offer_with<G: StripeGateway>(
     )
     .map_err(|e| e.to_string())?;
 
-    if let Some(hd) = harvest_date {
-        conn.execute("DELETE FROM harvest_links WHERE harvest_date = ?1", [&hd])
+    if let Some((hd, _)) = &held {
+        conn.execute("DELETE FROM harvest_links WHERE harvest_date = ?1", [hd])
             .map_err(|e| e.to_string())?;
+    }
+
+    // J3 PRICE-GATE: archive the Price this row held, after the row write.
+    if let Some((_, Some(old_price_id))) = &held {
+        if !old_price_id.is_empty() {
+            let _ = gateway.archive_price(old_price_id);
+        }
     }
     Ok(())
 }

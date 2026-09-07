@@ -75,7 +75,7 @@ fn f2a_schema_v34_tables_exist_reference_and_logs_excluded_idempotent() {
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
     assert_eq!(v, db::SCHEMA_VERSION);
-    assert_eq!(db::SCHEMA_VERSION, 43);
+    assert_eq!(db::SCHEMA_VERSION, 44);
     for t in [
         "field_devices",
         "phone_pull_observations",

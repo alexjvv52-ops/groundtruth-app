@@ -11,7 +11,7 @@ pub struct FarmPaths {
     pub snapshots_dir: PathBuf,
 }
 
-pub const SCHEMA_VERSION: i32 = 43;
+pub const SCHEMA_VERSION: i32 = 44;
 
 /// Frozen tray id seeded into `open_v1_in_memory` (Phase 1 Ruling 2).
 #[cfg(test)]
@@ -663,6 +663,53 @@ CREATE TABLE stripe_unapplied_facts_new (
                     'wholesale_amount_mismatch','wholesale_payment',
                     'leftover_already_paid','leftover_amount_mismatch',
                     'no_payment_intent')),
+  amount_cents   INTEGER NULL,
+  currency       TEXT NULL,
+  stripe_created INTEGER NOT NULL,
+  observed_at    TEXT NOT NULL
+);
+INSERT INTO stripe_unapplied_facts_new
+  (event_id, stripe_object, stripe_id, status, amount_cents, currency,
+   stripe_created, observed_at)
+SELECT event_id, stripe_object, stripe_id, status, amount_cents, currency,
+       stripe_created, observed_at
+FROM stripe_unapplied_facts;
+DROP TABLE stripe_unapplied_facts;
+ALTER TABLE stripe_unapplied_facts_new RENAME TO stripe_unapplied_facts;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_stripe_unapplied_facts_identity
+  ON stripe_unapplied_facts (stripe_object, stripe_id, status);
+CREATE INDEX IF NOT EXISTS idx_stripe_unapplied_facts_observed
+  ON stripe_unapplied_facts (observed_at);
+CREATE TRIGGER stripe_unapplied_facts_before_update
+BEFORE UPDATE ON stripe_unapplied_facts
+BEGIN SELECT RAISE(ABORT, 'stripe_unapplied_facts is append-only'); END;
+CREATE TRIGGER stripe_unapplied_facts_before_delete
+BEFORE DELETE ON stripe_unapplied_facts
+BEGIN SELECT RAISE(ABORT, 'stripe_unapplied_facts is append-only'); END;
+"#;
+
+/// J4 REF-DUP-FACT. A second Stripe session under a cart reference an order
+/// already carries was answered as AlreadyApplied and left no trace — paid
+/// money with no row behind it. It now joins the status CHECK as
+/// `duplicate_reference`, keyed by the new session id. Same rebuild as
+/// v37 / v38 / v42 (triggers off, new table, copy, drop, rename, indexes and
+/// append-only triggers back); rows kept. No Kind changes, so the event_log
+/// triggers are not reinstalled.
+pub(crate) const SCHEMA_V44_UNAPPLIED_FACTS_WIDEN_SQL: &str = r#"
+DROP TRIGGER IF EXISTS stripe_unapplied_facts_before_update;
+DROP TRIGGER IF EXISTS stripe_unapplied_facts_before_delete;
+CREATE TABLE stripe_unapplied_facts_new (
+  event_id       TEXT PRIMARY KEY,
+  stripe_object  TEXT NOT NULL CHECK (stripe_object IN
+                   ('checkout_session','refund','dispute')),
+  stripe_id      TEXT NOT NULL,
+  status         TEXT NOT NULL CHECK (status IN
+                   ('unmatched','unrecorded','no_paid_order',
+                    'amount_partial','not_terminal','terminal_failed','not_comparable',
+                    'wholesale_not_delivered','wholesale_already_settled',
+                    'wholesale_amount_mismatch','wholesale_payment',
+                    'leftover_already_paid','leftover_amount_mismatch',
+                    'no_payment_intent','duplicate_reference')),
   amount_cents   INTEGER NULL,
   currency       TEXT NULL,
   stripe_created INTEGER NOT NULL,
@@ -2183,6 +2230,17 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
         conn.pragma_update(None, "user_version", 43)
             .map_err(|e| e.to_string())?;
         version = 43;
+    }
+    if version < 44 {
+        // J4 REF-DUP-FACT: a second Stripe session under a cart reference an
+        // order already carries joins the stripe_unapplied_facts.status CHECK
+        // as `duplicate_reference`. Table rebuild, rows kept. No Kind changes,
+        // so the event_log triggers are not reinstalled (v42).
+        conn.execute_batch(SCHEMA_V44_UNAPPLIED_FACTS_WIDEN_SQL)
+            .map_err(|e| e.to_string())?;
+        conn.pragma_update(None, "user_version", 44)
+            .map_err(|e| e.to_string())?;
+        version = 44;
     }
     if version > SCHEMA_VERSION {
         return Err(format!(

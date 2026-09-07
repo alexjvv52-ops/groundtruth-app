@@ -13,6 +13,12 @@ const KEY = `${RESTRICTED_PREFIX}test_unit_fixture_not_a_real_key`;
 const LIVE_KEY = `${RESTRICTED_PREFIX}live_unit_fixture_not_a_real_key`;
 const SECRET_KEY = `${SECRET_PREFIX}test_secret`;
 
+// J3: the injected clock. Fixture harvest date 2026-08-14 == today → not past.
+const NOW_ISO = "2026-08-14T12:00:00.000Z";
+const clock = () => NOW_ISO;
+const STALE_PAGE =
+  "The prices on this page are out of date. Reload and try again.";
+
 const baseEnv = {
   STRIPE_RESTRICTED_KEY: KEY,
   ALLOWED_ORIGIN: ORIGIN,
@@ -48,8 +54,20 @@ function postRequest(body, { origin = ORIGIN, method = "POST" } = {}) {
 /** @returns {{ fetchImpl: typeof fetch, calls: object[] }} */
 function fakeStripe({
   prices = {
-    price_peas: { id: "price_peas", active: true, currency: "cad", unit_amount: 1000 },
-    price_sun: { id: "price_sun", active: true, currency: "cad", unit_amount: 750 },
+    price_peas: {
+      id: "price_peas",
+      active: true,
+      currency: "cad",
+      unit_amount: 1000,
+      metadata: { harvest_date: "2026-08-14" },
+    },
+    price_sun: {
+      id: "price_sun",
+      active: true,
+      currency: "cad",
+      unit_amount: 750,
+      metadata: { harvest_date: "2026-08-14" },
+    },
   },
   sessionUrl = "https://checkout.stripe.com/c/pay/cs_test_abc",
 } = {}) {
@@ -115,7 +133,7 @@ describe("checkout handler", () => {
     const orig = console.log;
     console.log = (...a) => logs.push(a.join(" "));
     try {
-      const res = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl);
+      const res = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl, clock);
       assert.equal(res.status, 200);
       const body = await res.json();
       assert.deepEqual(Object.keys(body).sort(), ["url"]);
@@ -136,6 +154,7 @@ describe("checkout handler", () => {
       postRequest(cart({ total: 9999 })),
       baseEnv,
       fetchImpl,
+      clock,
     );
     assert.equal(res.status, 409);
     const body = await res.json();
@@ -153,6 +172,7 @@ describe("checkout handler", () => {
       postRequest(cart({ total: 1 })),
       baseEnv,
       fetchImpl,
+      clock,
     );
     assert.equal(res.status, 409);
     assert.equal(sessionCalls(calls).length, 0);
@@ -170,6 +190,7 @@ describe("checkout handler", () => {
         ),
         baseEnv,
         fetchImpl,
+        clock,
       );
       assert.equal(res.status, 400, `quantity ${quantity}`);
       assert.equal(stripeCalls(calls).length, 0, `quantity ${quantity}`);
@@ -187,6 +208,7 @@ describe("checkout handler", () => {
         postRequest(cart({ lines, total: 21 })),
         baseEnv,
         fetchImpl,
+        clock,
       );
       assert.equal(res.status, 400);
       assert.equal(stripeCalls(calls).length, 0);
@@ -205,6 +227,7 @@ describe("checkout handler", () => {
         ),
         baseEnv,
         fetchImpl,
+        clock,
       );
       assert.equal(res.status, 400);
       assert.equal(stripeCalls(calls).length, 0);
@@ -215,6 +238,7 @@ describe("checkout handler", () => {
         postRequest(cart({ reference: "bad ref!" })),
         baseEnv,
         fetchImpl,
+        clock,
       );
       assert.equal(res.status, 400);
       assert.equal(stripeCalls(calls).length, 0);
@@ -225,6 +249,7 @@ describe("checkout handler", () => {
         postRequest(cart({ harvestDate: "08/14/2026" })),
         baseEnv,
         fetchImpl,
+        clock,
       );
       assert.equal(res.status, 400);
       assert.equal(stripeCalls(calls).length, 0);
@@ -249,7 +274,7 @@ describe("checkout handler", () => {
           },
         },
       });
-      const res = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl);
+      const res = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl, clock);
       assert.equal(res.status, 400);
       assert.equal(sessionCalls(calls).length, 0);
     }
@@ -261,10 +286,11 @@ describe("checkout handler", () => {
             active: true,
             currency: "cad",
             unit_amount: 1000,
+            metadata: { harvest_date: "2026-08-14" },
           },
         },
       });
-      const res = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl);
+      const res = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl, clock);
       assert.equal(res.status, 400);
       assert.equal(sessionCalls(calls).length, 0);
     }
@@ -280,6 +306,7 @@ describe("checkout handler", () => {
       postRequest(cart()),
       { ...baseEnv, STRIPE_RESTRICTED_KEY: LIVE_KEY },
       fetchImpl,
+      clock,
     );
     assert.equal(res.status, 200);
     const body = await res.json();
@@ -298,6 +325,7 @@ describe("checkout handler", () => {
       postRequest(cart(), { origin: "https://evil.example" }),
       baseEnv,
       fetchImpl,
+      clock,
     );
     assert.equal(res.status, 403);
     assert.equal(stripeCalls(calls).length, 0);
@@ -306,7 +334,7 @@ describe("checkout handler", () => {
 
   it("allowed Origin is echoed back; any other Origin is not; never *", async () => {
     const { fetchImpl } = fakeStripe();
-    const ok = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl);
+    const ok = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl, clock);
     assert.equal(ok.status, 200);
     assert.equal(ok.headers.get("Access-Control-Allow-Origin"), ORIGIN);
     assert.notEqual(ok.headers.get("Access-Control-Allow-Origin"), "*");
@@ -315,6 +343,7 @@ describe("checkout handler", () => {
       postRequest(cart(), { origin: "https://evil-prairieroots.example" }),
       baseEnv,
       fetchImpl,
+      clock,
     );
     assert.equal(denied.status, 403);
     assert.equal(denied.headers.get("Access-Control-Allow-Origin"), null);
@@ -326,6 +355,7 @@ describe("checkout handler", () => {
       }),
       baseEnv,
       fetchImpl,
+      clock,
     );
     assert.equal(preflightOk.status, 204);
     assert.equal(preflightOk.headers.get("Access-Control-Allow-Origin"), ORIGIN);
@@ -337,6 +367,7 @@ describe("checkout handler", () => {
       }),
       baseEnv,
       fetchImpl,
+      clock,
     );
     assert.equal(preflightDenied.status, 403);
     assert.equal(preflightDenied.headers.get("Access-Control-Allow-Origin"), null);
@@ -355,6 +386,7 @@ describe("checkout handler", () => {
       postRequest(cart(), { origin: local }),
       env,
       fetchImpl,
+      clock,
     );
     assert.equal(fromLocal.status, 200);
     assert.equal(fromLocal.headers.get("Access-Control-Allow-Origin"), local);
@@ -363,6 +395,7 @@ describe("checkout handler", () => {
       postRequest(cart(), { origin: loopback }),
       env,
       fetchImpl,
+      clock,
     );
     assert.equal(fromLoopback.status, 200);
     assert.equal(fromLoopback.headers.get("Access-Control-Allow-Origin"), loopback);
@@ -372,6 +405,7 @@ describe("checkout handler", () => {
       postRequest(cart(), { origin: "http://localhost:5500.evil.example" }),
       env,
       fetchImpl,
+      clock,
     );
     assert.equal(prefix.status, 403);
     assert.equal(prefix.headers.get("Access-Control-Allow-Origin"), null);
@@ -383,6 +417,7 @@ describe("checkout handler", () => {
         ALLOWED_ORIGIN: "https://shop.prairieroots.example",
       },
       fetchImpl,
+      clock,
     );
     assert.equal(substring.status, 403);
     assert.equal(substring.headers.get("Access-Control-Allow-Origin"), null);
@@ -392,8 +427,8 @@ describe("checkout handler", () => {
   it("same reference twice sends the same Idempotency-Key", async () => {
     const { fetchImpl, calls } = fakeStripe();
     const body = cart({ reference: "same_ref_twice_001" });
-    await handleCheckout(postRequest(body), baseEnv, fetchImpl);
-    await handleCheckout(postRequest(body), baseEnv, fetchImpl);
+    await handleCheckout(postRequest(body), baseEnv, fetchImpl, clock);
+    await handleCheckout(postRequest(body), baseEnv, fetchImpl, clock);
     const sessions = sessionCalls(calls);
     assert.equal(sessions.length, 2);
     const k1 = sessions[0].headers["Idempotency-Key"];
@@ -408,11 +443,12 @@ describe("checkout handler", () => {
     const orig = console.log;
     console.log = (...a) => logs.push(a.join(" "));
     try {
-      const ok = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl);
+      const ok = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl, clock);
       const stale = await handleCheckout(
         postRequest(cart({ total: 1 })),
         baseEnv,
         fetchImpl,
+        clock,
       );
       const text = (await ok.text()) + (await stale.text()) + logs.join("\n");
       assertNoKeyLeak(text, calls, logs);
@@ -420,6 +456,190 @@ describe("checkout handler", () => {
       assert.ok(!logs.some((l) => l.includes(KEY)));
     } finally {
       console.log = orig;
+    }
+  });
+
+  it("J3 price harvest_date differs from the cart harvestDate → 409 stale-page line, no Session", async () => {
+    const { fetchImpl, calls } = fakeStripe({
+      prices: {
+        price_peas: {
+          id: "price_peas",
+          active: true,
+          currency: "cad",
+          unit_amount: 1000,
+          metadata: { harvest_date: "2026-08-14" },
+        },
+        price_sun: {
+          id: "price_sun",
+          active: true,
+          currency: "cad",
+          unit_amount: 750,
+          metadata: { harvest_date: "2026-08-21" },
+        },
+      },
+    });
+    const res = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl, clock);
+    assert.equal(res.status, 409);
+    const body = await res.json();
+    assert.equal(body.error, STALE_PAGE);
+    assert.equal(sessionCalls(calls).length, 0);
+    assert.ok(stripeCalls(calls).every((c) => c.url.includes("/v1/prices/")));
+  });
+
+  it("J3 price without a string harvest_date → 409, no Session", async () => {
+    {
+      const { fetchImpl, calls } = fakeStripe({
+        prices: {
+          price_peas: {
+            id: "price_peas",
+            active: true,
+            currency: "cad",
+            unit_amount: 1000,
+          },
+          price_sun: {
+            id: "price_sun",
+            active: true,
+            currency: "cad",
+            unit_amount: 750,
+            metadata: { harvest_date: "2026-08-14" },
+          },
+        },
+      });
+      const res = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl, clock);
+      assert.equal(res.status, 409);
+      const body = await res.json();
+      assert.equal(body.error, STALE_PAGE);
+      assert.equal(sessionCalls(calls).length, 0);
+    }
+    {
+      const { fetchImpl, calls } = fakeStripe({
+        prices: {
+          price_peas: {
+            id: "price_peas",
+            active: true,
+            currency: "cad",
+            unit_amount: 1000,
+            metadata: {},
+          },
+          price_sun: {
+            id: "price_sun",
+            active: true,
+            currency: "cad",
+            unit_amount: 750,
+            metadata: { harvest_date: "2026-08-14" },
+          },
+        },
+      });
+      const res = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl, clock);
+      assert.equal(res.status, 409);
+      const body = await res.json();
+      assert.equal(body.error, STALE_PAGE);
+      assert.equal(sessionCalls(calls).length, 0);
+    }
+    {
+      const { fetchImpl, calls } = fakeStripe({
+        prices: {
+          price_peas: {
+            id: "price_peas",
+            active: true,
+            currency: "cad",
+            unit_amount: 1000,
+            metadata: { harvest_date: 20260814 },
+          },
+          price_sun: {
+            id: "price_sun",
+            active: true,
+            currency: "cad",
+            unit_amount: 750,
+            metadata: { harvest_date: "2026-08-14" },
+          },
+        },
+      });
+      const res = await handleCheckout(postRequest(cart()), baseEnv, fetchImpl, clock);
+      assert.equal(res.status, 409);
+      const body = await res.json();
+      assert.equal(body.error, STALE_PAGE);
+      assert.equal(sessionCalls(calls).length, 0);
+    }
+  });
+
+  it("J3 harvestDate before the injected today → 409 before any Stripe call", async () => {
+    const { fetchImpl, calls } = fakeStripe();
+    const res = await handleCheckout(
+      postRequest(cart({ harvestDate: "2026-08-13" })),
+      baseEnv,
+      fetchImpl,
+      clock,
+    );
+    assert.equal(res.status, 409);
+    const body = await res.json();
+    assert.equal(body.error, STALE_PAGE);
+    assert.equal(calls.length, 0);
+
+    const resDefault = await handleCheckout(
+      postRequest(cart({ harvestDate: "2000-01-01" })),
+      baseEnv,
+      fetchImpl,
+    );
+    assert.equal(resDefault.status, 409);
+    assert.equal(calls.length, 0);
+  });
+
+  it("J3 equal-and-not-past still creates one Session and the worker forwards, never attributes", async () => {
+    {
+      const { fetchImpl } = fakeStripe();
+      const res = await handleCheckout(
+        postRequest(cart()),
+        baseEnv,
+        fetchImpl,
+        () => "2026-08-14T23:59:59.000Z",
+      );
+      assert.equal(res.status, 200);
+    }
+    {
+      const { fetchImpl, calls } = fakeStripe({
+        prices: {
+          price_peas: {
+            id: "price_peas",
+            active: true,
+            currency: "cad",
+            unit_amount: 1000,
+            metadata: { harvest_date: "2026-08-15" },
+          },
+          price_sun: {
+            id: "price_sun",
+            active: true,
+            currency: "cad",
+            unit_amount: 750,
+            metadata: { harvest_date: "2026-08-15" },
+          },
+        },
+      });
+      const res = await handleCheckout(
+        postRequest(cart({ harvestDate: "2026-08-15" })),
+        baseEnv,
+        fetchImpl,
+        clock,
+      );
+      assert.equal(res.status, 200);
+      assert.equal(sessionCalls(calls).length, 1);
+      const session = sessionCalls(calls)[0];
+      assert.match(session.body, /metadata%5Bharvest_date%5D=2026-08-15/);
+      assert.deepEqual(
+        [...new URLSearchParams(session.body).keys()].sort(),
+        [
+          "cancel_url",
+          "client_reference_id",
+          "line_items[0][price]",
+          "line_items[0][quantity]",
+          "line_items[1][price]",
+          "line_items[1][quantity]",
+          "metadata[harvest_date]",
+          "metadata[reference]",
+          "mode",
+          "success_url",
+        ].sort(),
+      );
     }
   });
 });

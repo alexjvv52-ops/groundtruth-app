@@ -1622,3 +1622,274 @@ fn int010_imported_undo_points_at_this_farms_row_and_reimports_cleanly() {
     let _ = fs::remove_dir_all(&src);
     let _ = fs::remove_dir_all(&target_dir);
 }
+
+// --- J2 IMPORT-PATH-HARDEN (PATH-A SIZE-A GATE-A LINK-A DEPTH-A SENT-A) -----
+//
+// Fixtures here edit the manifest as data and write it back as JSON. They
+// never call `remanifest`, which joins every listed path to hash it — the very
+// traversal J2 refuses. An honest bundle (seed_and_export, rt2) is unchanged.
+
+fn write_manifest(bundle: &Path, manifest: &Manifest) {
+    let json = serde_json::to_string_pretty(manifest).unwrap();
+    fs::write(bundle.join("manifest.json"), format!("{json}\n")).unwrap();
+}
+
+fn push_manifest_entry(bundle: &Path, path: &str, size_bytes: u64, sha256: &str) {
+    let mut manifest = read_manifest(bundle);
+    manifest.files.push(export::ManifestFile {
+        path: path.to_string(),
+        size_bytes,
+        sha256: sha256.to_string(),
+    });
+    write_manifest(bundle, &manifest);
+}
+
+fn set_manifest_size(bundle: &Path, path: &str, size_bytes: u64) {
+    let mut manifest = read_manifest(bundle);
+    for entry in &mut manifest.files {
+        if entry.path == path {
+            entry.size_bytes = size_bytes;
+        }
+    }
+    write_manifest(bundle, &manifest);
+}
+
+fn mismatch_detail(plan: &import::ImportPlan, path: &str) -> Option<String> {
+    plan.refusals.iter().find_map(|r| match r {
+        ImportRefusal::ManifestMismatch { path: p, detail } if p == path => Some(detail.clone()),
+        _ => None,
+    })
+}
+
+/// Zero counts prove GATE-A: nothing after the manifest was read.
+fn assert_gated(plan: &import::ImportPlan) {
+    assert!(!plan.can_apply);
+    assert_eq!(plan.events_in_bundle, 0);
+    assert_eq!(plan.would_be_added, 0);
+    assert_eq!(plan.shared_event_ids, 0);
+}
+
+/// The length exists; the bytes were never written.
+fn sparse_file(path: &Path, len: u64) {
+    let file = fs::File::create(path).unwrap();
+    file.set_len(len).unwrap();
+}
+
+#[cfg(windows)]
+fn make_link(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_file(target, link)
+}
+
+#[cfg(unix)]
+fn make_link(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[test]
+fn j2_manifest_path_that_is_not_plain_is_refused_before_the_join() {
+    let (target_dir, mut conn) = empty_target("j2-path-tgt");
+    let before = snapshot_target(&conn, &target_dir);
+    // One byte beside the bundle, listed with its true size and digest: if the
+    // join still ran, `../x` would pass. Only the path rule can refuse it.
+    let bad_paths: &[&str] = &["../x", "/x", "a\\b", "", "./x", "C:/x", "//srv/share/x"];
+    for bad in bad_paths {
+        let (_src, bundle) = seed_and_export("j2-path");
+        fs::write(bundle.parent().unwrap().join("x"), b"!").unwrap();
+        push_manifest_entry(&bundle, bad, 1, &sha256_hex(b"!"));
+        let plan = import::preview_import(&conn, &bundle).unwrap();
+        let detail = mismatch_detail(&plan, bad).unwrap_or_else(|| panic!("{bad:?} not refused"));
+        // On Windows every one of these is refused by the path rule. On unix a
+        // drive letter is an ordinary name, so that entry is simply missing.
+        if cfg!(windows) || !bad.starts_with("C:") {
+            assert_eq!(detail, import::PATH_NOT_PLAIN_DETAIL, "{bad:?}");
+        }
+        assert_gated(&plan);
+        assert!(import::apply_import(&mut conn, &bundle).is_err());
+        assert_target_unchanged(&conn, &target_dir, &before);
+        let _ = fs::remove_dir_all(&_src);
+    }
+    let _ = fs::remove_dir_all(&target_dir);
+}
+
+#[test]
+fn j2_size_is_compared_before_any_read() {
+    let (target_dir, conn) = empty_target("j2-size-tgt");
+    let (_src, bundle) = seed_and_export("j2-size");
+    let real = fs::metadata(bundle.join("costs.csv")).unwrap().len();
+    set_manifest_size(&bundle, "costs.csv", real + 1);
+    // Windows: hold costs.csv with no sharing, so any read attempt would fail
+    // with a sharing violation and turn the plan into an Err. The plan stays a
+    // plan: the size was judged from metadata alone.
+    #[cfg(windows)]
+    let _hold = {
+        use std::os::windows::fs::OpenOptionsExt;
+        fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(bundle.join("costs.csv"))
+            .unwrap()
+    };
+    let plan = import::preview_import(&conn, &bundle).unwrap();
+    let want = format!("size is {real} bytes; manifest says {}", real + 1);
+    assert_eq!(
+        mismatch_detail(&plan, "costs.csv").as_deref(),
+        Some(want.as_str())
+    );
+    assert_gated(&plan);
+    #[cfg(windows)]
+    drop(_hold);
+    let _ = fs::remove_dir_all(&_src);
+    let _ = fs::remove_dir_all(&target_dir);
+}
+
+#[test]
+fn j2_over_cap_entry_is_refused_before_any_read() {
+    let (target_dir, conn) = empty_target("j2-cap-tgt");
+    let (_src, bundle) = seed_and_export("j2-cap");
+    // Listed at their true sparse length, so the cap is the only thing that
+    // can refuse them; the digest is never computed.
+    let cap = import::MAX_BUNDLE_ENTRY_BYTES;
+    sparse_file(&bundle.join("big.bin"), cap + 1);
+    push_manifest_entry(&bundle, "big.bin", cap + 1, &sha256_hex(b""));
+    let receipt_cap = costs::MAX_RECEIPT_BYTES;
+    sparse_file(&bundle.join("receipts").join("big.bin"), receipt_cap + 1);
+    push_manifest_entry(
+        &bundle,
+        "receipts/big.bin",
+        receipt_cap + 1,
+        &sha256_hex(b""),
+    );
+    let plan = import::preview_import(&conn, &bundle).unwrap();
+    assert_eq!(
+        mismatch_detail(&plan, "big.bin").as_deref(),
+        Some("is 268435457 bytes; Groundtruth reads bundle files up to 256 MB")
+    );
+    assert_eq!(
+        mismatch_detail(&plan, "receipts/big.bin").as_deref(),
+        Some("is 26214401 bytes; Groundtruth reads bundle files up to 25 MB")
+    );
+    assert_gated(&plan);
+    let _ = fs::remove_dir_all(&_src);
+    let _ = fs::remove_dir_all(&target_dir);
+}
+
+#[test]
+fn j2_listed_path_deeper_than_receipts_is_refused_and_deeper_dirs_are_skipped() {
+    let (target_dir, mut conn) = empty_target("j2-depth-tgt");
+    let (_src, bundle) = seed_and_export("j2-depth");
+    let deep = bundle.join("receipts").join("sub");
+    fs::create_dir_all(&deep).unwrap();
+    fs::write(deep.join("x.txt"), b"deep").unwrap();
+    // Listed with its true size and digest: only the depth rule can refuse it.
+    push_manifest_entry(&bundle, "receipts/sub/x.txt", 4, &sha256_hex(b"deep"));
+    let plan = import::preview_import(&conn, &bundle).unwrap();
+    assert_eq!(
+        mismatch_detail(&plan, "receipts/sub/x.txt").as_deref(),
+        Some(import::PATH_TOO_DEEP_DETAIL)
+    );
+    assert_gated(&plan);
+    let _ = fs::remove_dir_all(&_src);
+
+    // Unlisted and below receipts/: the walk never enters it, so it is neither
+    // read nor reported, and the honest entries still make a clean plan.
+    let (_src2, bundle2) = seed_and_export("j2-depth-skip");
+    let deep2 = bundle2.join("receipts").join("deep");
+    fs::create_dir_all(&deep2).unwrap();
+    fs::write(deep2.join("y.txt"), b"unseen").unwrap();
+    let plan2 = import::preview_import(&conn, &bundle2).unwrap();
+    assert!(plan2.refusals.is_empty(), "{:?}", plan2.explanations);
+    assert!(plan2.can_apply);
+    import::apply_import(&mut conn, &bundle2).unwrap();
+    assert!(!target_dir.join("receipts").join("deep").exists());
+    let _ = fs::remove_dir_all(&_src2);
+    let _ = fs::remove_dir_all(&target_dir);
+}
+
+#[test]
+fn j2_links_are_never_read_hashed_or_copied() {
+    let (target_dir, mut conn) = empty_target("j2-link-tgt");
+    let (_src, bundle) = seed_and_export("j2-link");
+    let outside = bundle.parent().unwrap().join("outside.txt");
+    fs::write(&outside, b"outside-bytes").unwrap();
+    let root_link = bundle.join("link.csv");
+    if let Err(e) = make_link(&outside, &root_link) {
+        eprintln!("j2 link test skipped: cannot create a symlink here ({e})");
+        let _ = fs::remove_dir_all(&_src);
+        let _ = fs::remove_dir_all(&target_dir);
+        return;
+    }
+    let receipt_link = bundle.join("receipts").join("link.bin");
+    make_link(&outside, &receipt_link).unwrap();
+
+    // Unlisted links are not part of the bundle: the walk skips them, the
+    // plan stays clean, and the receipts copy leaves link.bin behind.
+    let plan = import::preview_import(&conn, &bundle).unwrap();
+    assert!(plan.refusals.is_empty(), "{:?}", plan.explanations);
+    import::apply_import(&mut conn, &bundle).unwrap();
+    assert!(!target_dir.join("receipts").join("link.bin").exists());
+
+    // A listed link, even with the target's true size and digest, is missing:
+    // the target is never read, never hashed.
+    push_manifest_entry(&bundle, "link.csv", 13, &sha256_hex(b"outside-bytes"));
+    let plan = import::preview_import(&conn, &bundle).unwrap();
+    assert_eq!(
+        mismatch_detail(&plan, "link.csv").as_deref(),
+        Some("listed in the manifest but missing from the bundle")
+    );
+    assert_gated(&plan);
+    let _ = fs::remove_dir_all(&_src);
+    let _ = fs::remove_dir_all(&target_dir);
+}
+
+#[test]
+fn j2_manifest_json_is_read_under_the_cap() {
+    let (target_dir, conn) = empty_target("j2-manifest-tgt");
+    let (_src, bundle) = seed_and_export("j2-manifest");
+    sparse_file(
+        &bundle.join("manifest.json"),
+        import::MAX_BUNDLE_ENTRY_BYTES + 1,
+    );
+    let err = import::preview_import(&conn, &bundle).unwrap_err();
+    assert_eq!(
+        err,
+        "could not read manifest.json: is 268435457 bytes; Groundtruth reads bundle files up to 256 MB"
+    );
+    let _ = fs::remove_dir_all(&_src);
+    let _ = fs::remove_dir_all(&target_dir);
+}
+
+#[test]
+fn j2_honest_bundle_is_unchanged_and_the_numbers_are_the_signed_ones() {
+    assert_eq!(import::MAX_BUNDLE_ENTRY_BYTES, 256 * 1024 * 1024);
+    assert_eq!(import::MAX_BUNDLE_DEPTH, 2);
+    assert_eq!(costs::MAX_RECEIPT_BYTES, 25 * 1024 * 1024);
+    assert_eq!(
+        import::PATH_NOT_PLAIN_DETAIL,
+        "the path is not a plain relative path inside the bundle"
+    );
+    assert_eq!(
+        import::PATH_TOO_DEEP_DETAIL,
+        "is nested deeper than a Groundtruth bundle goes"
+    );
+    let scan = production_scan("import.rs");
+    for needle in [
+        "fs::symlink_metadata(&abs)",
+        "entry.file_type()",
+        "is_plain_bundle_path(&entry.path)",
+        "crate::costs::MAX_RECEIPT_BYTES",
+    ] {
+        assert!(scan.contains(needle), "import.rs lost {needle}");
+    }
+
+    let (target_dir, mut conn) = empty_target("j2-honest-tgt");
+    let (_src, bundle) = seed_and_export("j2-honest");
+    let plan = import::preview_import(&conn, &bundle).unwrap();
+    assert!(plan.refusals.is_empty(), "{:?}", plan.explanations);
+    assert!(plan.can_apply);
+    assert!(plan.events_in_bundle > 0);
+    assert_eq!(plan.would_be_added, plan.events_in_bundle);
+    let result = import::apply_import(&mut conn, &bundle).unwrap();
+    assert_eq!(result.events_added, plan.events_in_bundle);
+    let _ = fs::remove_dir_all(&_src);
+    let _ = fs::remove_dir_all(&target_dir);
+}

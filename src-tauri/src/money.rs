@@ -214,6 +214,10 @@ pub trait StripeGateway: Send + Sync {
     ) -> Result<(String, String), String>;
     /// Used once on shop generate to deactivate stale harvest Payment Links, then idle.
     fn deactivate_link(&self, link_id: &str) -> Result<(), String>;
+    /// J3 PRICE-GATE: archive a Stripe Price this farm no longer sells
+    /// (`active=false`). Best-effort after the local row write — the local
+    /// write is never rolled back on a Stripe error.
+    fn archive_price(&self, price_id: &str) -> Result<(), String>;
     /// TILL-A (GT-D22): Product + Price + Payment Link for one wholesale bill.
     fn create_order_payment_link(&self, bill: &OrderBill) -> Result<MintedLink, String>;
     fn list_paid_sessions(&self, since: Option<&str>) -> Result<Vec<PaidSession>, String>;
@@ -515,11 +519,38 @@ fn apply_paid_session_gated(
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    // Idempotency gate: a session (or cart client_reference) already recorded
-    // means this exact fact was already applied — never insert it twice.
-    if session_already_recorded(&tx, session)? {
-        drop(tx);
-        return Ok(AppliedOutcome::AlreadyApplied);
+    // Idempotency gate: a session already recorded by its own id means this
+    // exact fact was already applied — never insert it twice. J4 REF-DUP-FACT:
+    // a different session under a cart reference an order already carries is
+    // not that fact — it is named `duplicate_reference` for the new session,
+    // keyed by the new session id, and never booked: no orders row, no
+    // stripe.session_paid, no capacity move. The first order stands.
+    match session_already_recorded(&tx, session)? {
+        RecordedAs::NotRecorded => {}
+        RecordedAs::BySession => {
+            drop(tx);
+            return Ok(AppliedOutcome::AlreadyApplied);
+        }
+        RecordedAs::ByReference { first_session_id } => {
+            drop(tx);
+            record_unapplied_fact_detailed(
+                conn,
+                "checkout_session",
+                &session.session_id,
+                "duplicate_reference",
+                Some(session.amount_cents),
+                Some(&session.currency),
+                session.created,
+                json!({
+                    "clientReference": session.client_reference,
+                    "paymentIntent": session.payment_intent,
+                    "firstSessionId": first_session_id,
+                }),
+            )?;
+            return Ok(AppliedOutcome::Rejected {
+                session_id: session.session_id.clone(),
+            });
+        }
     }
 
     let now = projection::handler_now();
@@ -802,11 +833,24 @@ fn refuse_leftover_link_session(
     })
 }
 
-/// True when this session's Stripe fact was already recorded — via the same
+/// J4 REF-DUP-FACT: how a paid session was already recorded. `BySession` is
+/// the same `stripe_session_id` — an honest replay, silent. `ByReference` is
+/// idempotency key 2: a different session whose non-empty `client_reference`
+/// an order already carries; it names the first twin's session id so the
+/// trace can point at the order that stands.
+enum RecordedAs {
+    NotRecorded,
+    BySession,
+    ByReference { first_session_id: String },
+}
+/// How this session's Stripe fact was already recorded — via the same
 /// `stripe_session_id`, or (idempotency key 2) the same non-empty
 /// `client_reference` recorded on any order. Checked before ever generating a
 /// new order id, so retries never race a partial insert.
-fn session_already_recorded(tx: &Transaction<'_>, session: &PaidSession) -> Result<bool, String> {
+fn session_already_recorded(
+    tx: &Transaction<'_>,
+    session: &PaidSession,
+) -> Result<RecordedAs, String> {
     let by_session: i64 = tx
         .query_row(
             "SELECT COUNT(*) FROM orders WHERE stripe_session_id = ?1",
@@ -815,25 +859,27 @@ fn session_already_recorded(tx: &Transaction<'_>, session: &PaidSession) -> Resu
         )
         .map_err(|e| e.to_string())?;
     if by_session > 0 {
-        return Ok(true);
+        return Ok(RecordedAs::BySession);
     }
     if let Some(cr) = session
         .client_reference
         .as_deref()
         .filter(|s| !s.is_empty())
     {
-        let by_ref: i64 = tx
+        let first: Option<String> = tx
             .query_row(
-                "SELECT COUNT(*) FROM orders WHERE client_reference = ?1",
+                "SELECT stripe_session_id FROM orders WHERE client_reference = ?1
+                 ORDER BY created_at ASC, id ASC LIMIT 1",
                 [cr],
                 |row| row.get(0),
             )
+            .optional()
             .map_err(|e| e.to_string())?;
-        if by_ref > 0 {
-            return Ok(true);
+        if let Some(first_session_id) = first {
+            return Ok(RecordedAs::ByReference { first_session_id });
         }
     }
-    Ok(false)
+    Ok(RecordedAs::NotRecorded)
 }
 
 /// C2 (INT-002): true when a `stripe.refunded` event already names this
@@ -2114,6 +2160,8 @@ pub mod fake {
         pub harvest_links_created: Vec<(String, Vec<HarvestLinkLine>)>,
         pub deactivated_links: Vec<String>,
         pub deactivate_err: Option<String>,
+        pub archived_prices: Vec<String>,
+        pub archive_err: Option<String>,
         pub order_links_created: Vec<OrderBill>,
     }
 
@@ -2159,6 +2207,10 @@ pub mod fake {
         pub fn fail_deactivate(&self, err: impl Into<String>) {
             self.state.lock().unwrap().deactivate_err = Some(err.into());
         }
+
+        pub fn fail_archive(&self, err: impl Into<String>) {
+            self.state.lock().unwrap().archive_err = Some(err.into());
+        }
     }
 
     impl Default for FakeGateway {
@@ -2182,7 +2234,7 @@ pub mod fake {
             if let Some(err) = st.create_link_err.clone() {
                 return Err(err);
             }
-            let price_id = format!("price_fake_{}", offer.id);
+            let price_id = format!("price_fake_{}_{}", offer.id, st.prices_created.len());
             st.prices_created.push(offer.clone());
             Ok(price_id)
         }
@@ -2211,6 +2263,15 @@ pub mod fake {
                 return Err(err);
             }
             st.deactivated_links.push(link_id.to_string());
+            Ok(())
+        }
+
+        fn archive_price(&self, price_id: &str) -> Result<(), String> {
+            let mut st = self.state.lock().unwrap();
+            if let Some(err) = st.archive_err.clone() {
+                return Err(err);
+            }
+            st.archived_prices.push(price_id.to_string());
             Ok(())
         }
 

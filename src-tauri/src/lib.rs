@@ -102,6 +102,8 @@ mod income_tests;
 #[cfg(test)]
 mod inv_a_tests;
 #[cfg(test)]
+mod j4_tests;
+#[cfg(test)]
 mod key_door_tests;
 #[cfg(test)]
 mod link_retire_tests;
@@ -127,6 +129,8 @@ mod owed_lo_tests;
 mod phone_pull_tests;
 #[cfg(test)]
 mod phone_tests;
+#[cfg(test)]
+mod price_gate_tests;
 #[cfg(test)]
 mod r3_tests;
 #[cfg(test)]
@@ -4958,8 +4962,21 @@ mod tests {
         let a = money::apply_paid_session(&mut conn, &first).unwrap();
         assert!(matches!(a, crate::models::AppliedOutcome::Applied { .. }));
         let b = money::apply_paid_session(&mut conn, &second).unwrap();
-        assert!(matches!(b, crate::models::AppliedOutcome::AlreadyApplied));
-
+        // J4 REF-DUP-FACT: the second session under a booked reference is
+        // named, never booked — Rejected, one duplicate_reference fact keyed
+        // by the new session id, and still one order.
+        assert!(matches!(b, crate::models::AppliedOutcome::Rejected { .. }));
+        let dup_facts: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM stripe_unapplied_facts
+                 WHERE stripe_object = 'checkout_session'
+                   AND stripe_id = 'cs_ref_b'
+                   AND status = 'duplicate_reference'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(dup_facts, 1);
         assert_eq!(money::list_orders(&conn, None).unwrap().len(), 1);
         assert_eq!(
             money::list_orders(&conn, None).unwrap()[0]
@@ -5325,9 +5342,21 @@ mod tests {
             let mut st = gw.state.lock().unwrap();
             st.session_pages = vec![money::SessionPage::from_parsed(vec![a, b])];
         }
-
         let r = poll::run_poll(&mut conn, &gw).unwrap();
         assert!(r.ok);
+        // J4 REF-DUP-FACT: the poll names the second session once — one
+        // duplicate_reference fact keyed by cs_poll_ref_b.
+        let dup_facts: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM stripe_unapplied_facts
+                 WHERE stripe_object = 'checkout_session'
+                   AND stripe_id = 'cs_poll_ref_b'
+                   AND status = 'duplicate_reference'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(dup_facts, 1);
         assert_eq!(money::list_orders(&conn, None).unwrap().len(), 1);
         assert_eq!(trays::remaining_for_date(&conn, &hd).unwrap(), before - 2);
         assert_eq!(

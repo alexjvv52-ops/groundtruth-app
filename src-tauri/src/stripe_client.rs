@@ -293,6 +293,14 @@ impl<H: StripeHttp> StripeGateway for StripeClient<H> {
         Ok(())
     }
 
+    fn archive_price(&self, price_id: &str) -> Result<(), String> {
+        // J3 PRICE-GATE: a dropped retail Price stops being buyable at Stripe.
+        let path = format!("/v1/prices/{price_id}");
+        self.http
+            .post(&path, &[("active", "false")], &Uuid::new_v4().to_string())?;
+        Ok(())
+    }
+
     fn create_order_payment_link(&self, bill: &OrderBill) -> Result<MintedLink, String> {
         // Metadata is for the dashboard only — Farm OS never attributes from it.
         // LO-B (GT-D24-B): a leftover bill is recognised by its lo- reference and
