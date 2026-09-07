@@ -321,7 +321,10 @@ fn till_a_refund_on_a_link_payment_is_named_and_the_walk_advances() {
 
 #[test]
 fn till_a_live_key_is_accepted() {
-    assert_eq!(money::validate_restricted_key("rk_live_abc").unwrap(), "live");
+    assert_eq!(
+        money::validate_restricted_key("rk_live_abc").unwrap(),
+        "live"
+    );
 }
 
 #[test]

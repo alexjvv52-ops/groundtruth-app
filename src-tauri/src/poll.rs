@@ -12,8 +12,7 @@ use crate::attention;
 use crate::db;
 use crate::models::{AppliedOutcome, OrderView, ReconciliationDate, ReconciliationOrder};
 use crate::money::{
-    self, apply_dispute, apply_paid_session, apply_refund, FactOutcome, PaidSession, StripeGateway,
-    UnparsedSession,
+    self, apply_dispute, apply_refund, FactOutcome, PaidSession, StripeGateway, UnparsedSession,
 };
 use crate::trays;
 use chrono::{Local, Timelike};
@@ -130,7 +129,7 @@ fn run_poll_inner<G: StripeGateway>(conn: &mut Connection, gw: &G) -> Result<Pol
     for record in work {
         match record {
             SessionWork::Parsed(session) => {
-                match apply_paid_session(conn, &session)? {
+                match money::apply_paid_session_with(conn, &session, gw)? {
                     AppliedOutcome::Applied { .. } => sessions_applied += 1,
                     AppliedOutcome::AlreadyApplied => {}
                     AppliedOutcome::Rejected { .. } => sessions_rejected += 1,
@@ -292,7 +291,7 @@ pub fn apply_sessions_page_no_cursor(
     page: &[money::PaidSession],
 ) -> Result<(), String> {
     for session in page {
-        let _ = apply_paid_session(conn, session)?;
+        let _ = money::apply_paid_session(conn, session)?;
     }
     Ok(())
 }

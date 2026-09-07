@@ -113,6 +113,11 @@ impl<H: StripeHttp> StripeClient<H> {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn http(&self) -> &H {
+        &self.http
+    }
+
     #[allow(dead_code)]
     fn list_all_pages(
         &self,
@@ -341,6 +346,8 @@ impl<H: StripeHttp> StripeGateway for StripeClient<H> {
                 ("line_items[0][quantity]", "1"),
                 (meta_key, bill.order_id.as_str()),
                 (intent_meta_key, bill.order_id.as_str()),
+                // J1 LINK-RETIRE: one completed Checkout Session per parent link; Stripe refuses the second.
+                ("restrictions[completed_sessions][limit]", "1"),
             ],
             &format!("{idem}-link-{}", bill.order_id),
         )?;
@@ -732,6 +739,8 @@ pub mod fake_http {
         /// path -> queue of page JSON responses (or Err strings stored as `{"__err":"..."}`).
         pub get_pages: Mutex<HashMap<String, VecDeque<Result<Value, String>>>>,
         pub posts: Mutex<Vec<(String, String)>>,
+        pub post_pages: Mutex<HashMap<String, VecDeque<Value>>>,
+        pub post_forms: Mutex<Vec<(String, Vec<(String, String)>)>>,
     }
 
     impl FakeHttp {
@@ -756,6 +765,15 @@ pub mod fake_http {
                 .or_default()
                 .push_back(Err(err.into()));
         }
+
+        pub fn push_post(&self, path: &str, page: Value) {
+            self.post_pages
+                .lock()
+                .unwrap()
+                .entry(path.to_string())
+                .or_default()
+                .push_back(page);
+        }
     }
 
     impl StripeHttp for FakeHttp {
@@ -771,13 +789,24 @@ pub mod fake_http {
         fn post(
             &self,
             path: &str,
-            _form: &[(&str, &str)],
+            form: &[(&str, &str)],
             idempotency_key: &str,
         ) -> Result<Value, String> {
             self.posts
                 .lock()
                 .unwrap()
                 .push((path.to_string(), idempotency_key.to_string()));
+            self.post_forms.lock().unwrap().push((
+                path.to_string(),
+                form.iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            ));
+            if let Some(q) = self.post_pages.lock().unwrap().get_mut(path) {
+                if let Some(value) = q.pop_front() {
+                    return Ok(value);
+                }
+            }
             Err("fake http: post not stubbed".into())
         }
     }

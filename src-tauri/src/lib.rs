@@ -104,6 +104,8 @@ mod inv_a_tests;
 #[cfg(test)]
 mod key_door_tests;
 #[cfg(test)]
+mod link_retire_tests;
+#[cfg(test)]
 mod list_state_tests;
 #[cfg(test)]
 mod lo_a_tests;

@@ -1798,6 +1798,33 @@ pub fn void_order(
     get_order(conn, order_id)
 }
 
+/// J1 LINK-RETIRE. The order's settle or void is committed; if it carried a
+/// minted Payment Link, that link is spent — deactivate it at Stripe so the
+/// page stops taking money. Best-effort, same shape as
+/// offers::retire_harvest_links: the Stripe Err is dropped, the local event
+/// is already committed and is never rolled back. A never-minted order has
+/// nothing to retire. A late session on the same link still lands as
+/// wholesale_already_settled (money.rs) — paid money is never deleted.
+pub(crate) fn retire_order_link(
+    gateway: &dyn crate::money::StripeGateway,
+    order: &WholesaleOrderView,
+) {
+    if let Some(link_id) = order.payment_link_id.as_deref() {
+        let _ = gateway.deactivate_link(link_id);
+    }
+}
+
+/// The desk doors (Paid…, Void): the key on file, if any. No key means no
+/// Stripe to talk to and nothing to retire against; the local event stands.
+pub(crate) fn retire_order_link_from_db(conn: &Connection, order: &WholesaleOrderView) {
+    if order.payment_link_id.is_none() {
+        return;
+    }
+    if let Ok(gw) = crate::money::gateway_from_db(conn) {
+        retire_order_link(&gw, order);
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OwedSummary {

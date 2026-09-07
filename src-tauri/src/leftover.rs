@@ -645,6 +645,33 @@ pub fn pay_listing_cash(
     get_listing(conn, listing_id)
 }
 
+/// J1 LINK-RETIRE. The listing's cash close is committed; if it carried a
+/// minted Payment Link, that link is spent — deactivate it at Stripe so the
+/// page stops taking money. Best-effort, same shape as
+/// offers::retire_harvest_links: the Stripe Err is dropped, the local event
+/// is already committed and is never rolled back. A never-minted listing has
+/// nothing to retire. A late session on the same link still lands as
+/// leftover_already_paid (money.rs) — paid money is never deleted.
+pub(crate) fn retire_listing_link(
+    gateway: &dyn crate::money::StripeGateway,
+    listing: &LeftoverListingView,
+) {
+    if let Some(link_id) = listing.payment_link_id.as_deref() {
+        let _ = gateway.deactivate_link(link_id);
+    }
+}
+
+/// The desk door (Paid…): the key on file, if any. No key means no
+/// Stripe to talk to and nothing to retire against; the local event stands.
+pub(crate) fn retire_listing_link_from_db(conn: &Connection, listing: &LeftoverListingView) {
+    if listing.payment_link_id.is_none() {
+        return;
+    }
+    if let Ok(gw) = crate::money::gateway_from_db(conn) {
+        retire_listing_link(&gw, listing);
+    }
+}
+
 /// B3: a session on a leftover Payment Link belongs to its listing — matched
 /// by the lo- reference first, then the stored payment_link_id.
 pub(crate) fn link_session_listing(

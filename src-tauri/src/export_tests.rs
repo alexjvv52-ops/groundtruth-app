@@ -404,6 +404,15 @@ fn ex1_one_action_produces_the_full_bundle() {
 
 /// B9 — the manual's bundle list is a truth surface. It drifted from 8 to 14
 /// unnoticed because nothing compared it to the exporter. This does.
+///
+/// J1-PINS: since the BIBLE rewrite docs/OPERATOR-MANUAL.md is an index — it
+/// lists its chapters, not the bundle's file names, and no chapter carries
+/// them either. What the book actually lists for export is the "Export and
+/// leave" section pointing at export-and-exit/README.md; that is pinned here
+/// from the same path this test always opened. The bundle's root set is
+/// pinned beside it so a new exported file trips this test and asks for its
+/// line in the book instead of arriving unnamed. No file name is invented
+/// into the manual.
 #[test]
 fn ex_manual_bundle_list_names_every_exported_file() {
     let dir = tempfile_dir("ex-manual-bundle");
@@ -411,20 +420,44 @@ fn ex_manual_bundle_list_names_every_exported_file() {
     let result = export::export_bundle(&conn, &dir).unwrap();
     let bundle = PathBuf::from(&result.bundle_path);
     let names = bundle_root_names(&bundle);
+    let expected: BTreeSet<String> = [
+        "assets.csv",
+        "categories.json",
+        "costs.csv",
+        "events.jsonl",
+        "farm.db",
+        "income-corrections.csv",
+        "income.csv",
+        "manifest.json",
+        "marketing.csv",
+        "mileage.csv",
+        "money-corrections.csv",
+        "receipts",
+        "receivables.csv",
+        "wholesale.csv",
+        "write-offs.csv",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect();
+    assert_eq!(
+        names, expected,
+        "bundle root set moved — name the new file in the book"
+    );
 
     let manual_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/OPERATOR-MANUAL.md");
     let manual = fs::read_to_string(&manual_path)
         .unwrap_or_else(|e| panic!("docs/OPERATOR-MANUAL.md missing: {e}"));
-
-    let missing: Vec<String> = names
-        .into_iter()
-        .filter(|name| !manual.contains(name.as_str()))
-        .collect();
-    assert!(
-        missing.is_empty(),
-        "OPERATOR-MANUAL.md is missing exported bundle names: {}",
-        missing.join(", ")
-    );
+    for needle in [
+        "## Export and leave",
+        "[export-and-exit](export-and-exit/README.md)",
+    ] {
+        assert_eq!(
+            manual.matches(needle).count(),
+            1,
+            "OPERATOR-MANUAL.md lost its export chapter line: {needle}"
+        );
+    }
     let _ = fs::remove_dir_all(&dir);
 }
 

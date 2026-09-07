@@ -1628,6 +1628,10 @@ pub fn pay_leftover_listing_cash(
         &date_received,
         descriptor,
     );
+    // J1 LINK-RETIRE: Paid… on a linked listing spends the link. After the commit, best-effort.
+    if let Ok(view) = &result {
+        crate::leftover::retire_listing_link_from_db(&conn, view);
+    }
     flush_ok(&conn, &paths, result)
 }
 
@@ -1679,6 +1683,10 @@ pub fn pay_wholesale_order(
         duplicate_ack,
         write_off,
     );
+    // J1 LINK-RETIRE: Paid… on a linked order spends the link. After the commit, best-effort.
+    if let Ok(view) = &result {
+        crate::wholesale::retire_order_link_from_db(&conn, view);
+    }
     flush_ok(&conn, &paths, result)
 }
 
@@ -1847,6 +1855,10 @@ pub fn void_wholesale_order(
 ) -> Result<crate::wholesale::WholesaleOrderView, String> {
     let mut conn = state.0.lock().map_err(|e| e.to_string())?;
     let result = crate::wholesale::void_order(&mut conn, &order_id, reason);
+    // J1 LINK-RETIRE: Void on a linked order spends the link. After the commit, best-effort.
+    if let Ok(view) = &result {
+        crate::wholesale::retire_order_link_from_db(&conn, view);
+    }
     flush_ok(&conn, &paths, result)
 }
 

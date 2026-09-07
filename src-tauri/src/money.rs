@@ -441,6 +441,26 @@ pub(crate) fn apply_paid_session(
     conn: &mut Connection,
     session: &PaidSession,
 ) -> Result<AppliedOutcome, String> {
+    apply_paid_session_gated(conn, session, None)
+}
+
+/// J1 LINK-RETIRE. The poll's door: apply, and when a session on this farm's
+/// own Payment Link (wholesale wo- / leftover lo-) closed its parent, retire
+/// that link at Stripe after the local commit. Retail sessions carry no
+/// parent link and are untouched.
+pub(crate) fn apply_paid_session_with(
+    conn: &mut Connection,
+    session: &PaidSession,
+    gateway: &dyn StripeGateway,
+) -> Result<AppliedOutcome, String> {
+    apply_paid_session_gated(conn, session, Some(gateway))
+}
+
+fn apply_paid_session_gated(
+    conn: &mut Connection,
+    session: &PaidSession,
+    gateway: Option<&dyn StripeGateway>,
+) -> Result<AppliedOutcome, String> {
     // TILL-A (GT-D22): a session on this farm's own Payment Link belongs to
     // the wholesale order it bills — never to the retail order book.
     if let Some(order_id) = crate::wholesale::link_session_order(
@@ -448,7 +468,7 @@ pub(crate) fn apply_paid_session(
         session.client_reference.as_deref(),
         session.payment_link.as_deref(),
     )? {
-        return apply_wholesale_link_session(conn, session, &order_id);
+        return apply_wholesale_link_session(conn, session, &order_id, gateway);
     }
     // LO-B (GT-D24-B): a session on a leftover Payment Link belongs to its
     // listing — wo- first, then lo-, then retail (B3).
@@ -457,7 +477,7 @@ pub(crate) fn apply_paid_session(
         session.client_reference.as_deref(),
         session.payment_link.as_deref(),
     )? {
-        return apply_leftover_link_session(conn, session, &listing_id);
+        return apply_leftover_link_session(conn, session, &listing_id, gateway);
     }
     let resolved = match resolve_lines(conn, session)? {
         Ok(r) => r,
@@ -636,6 +656,7 @@ fn apply_wholesale_link_session(
     conn: &mut Connection,
     session: &PaidSession,
     order_id: &str,
+    gateway: Option<&dyn StripeGateway>,
 ) -> Result<AppliedOutcome, String> {
     if crate::wholesale::link_payment_already_applied(conn, &session.session_id)? {
         return Ok(AppliedOutcome::AlreadyApplied);
@@ -678,6 +699,13 @@ fn apply_wholesale_link_session(
         session.amount_cents,
         &paid_on,
     )?;
+    // J1 LINK-RETIRE: the income.received + wholesale.paid pair is committed;
+    // the link is spent. Best-effort, after the commit — a Stripe error never
+    // rolls the local event back. A second session on this link still lands as
+    // wholesale_already_settled above.
+    if let Some(gw) = gateway {
+        crate::wholesale::retire_order_link(gw, &order);
+    }
     Ok(AppliedOutcome::Applied {
         order_id: order_id.to_string(),
     })
@@ -710,6 +738,7 @@ fn apply_leftover_link_session(
     conn: &mut Connection,
     session: &PaidSession,
     listing_id: &str,
+    gateway: Option<&dyn StripeGateway>,
 ) -> Result<AppliedOutcome, String> {
     if crate::leftover::leftover_payment_already_applied(conn, &session.session_id)? {
         return Ok(AppliedOutcome::AlreadyApplied);
@@ -740,6 +769,13 @@ fn apply_leftover_link_session(
         session.amount_cents,
         &session.paid_at,
     )?;
+    // J1 LINK-RETIRE: the income.received + leftover.paid pair is committed;
+    // the link is spent. Best-effort, after the commit — a Stripe error never
+    // rolls the local event back. A second session on this link still lands as
+    // leftover_already_paid above.
+    if let Some(gw) = gateway {
+        crate::leftover::retire_listing_link(gw, &listing);
+    }
     Ok(AppliedOutcome::Applied {
         order_id: listing_id.to_string(),
     })
@@ -2077,6 +2113,7 @@ pub mod fake {
         /// Harvest-date Payment Links created: (harvest_date, lines).
         pub harvest_links_created: Vec<(String, Vec<HarvestLinkLine>)>,
         pub deactivated_links: Vec<String>,
+        pub deactivate_err: Option<String>,
         pub order_links_created: Vec<OrderBill>,
     }
 
@@ -2117,6 +2154,10 @@ pub mod fake {
 
         pub fn clear_session_fail(&self) {
             self.state.lock().unwrap().list_sessions_err = None;
+        }
+
+        pub fn fail_deactivate(&self, err: impl Into<String>) {
+            self.state.lock().unwrap().deactivate_err = Some(err.into());
         }
     }
 
@@ -2165,11 +2206,11 @@ pub mod fake {
         }
 
         fn deactivate_link(&self, link_id: &str) -> Result<(), String> {
-            self.state
-                .lock()
-                .unwrap()
-                .deactivated_links
-                .push(link_id.to_string());
+            let mut st = self.state.lock().unwrap();
+            if let Some(err) = st.deactivate_err.clone() {
+                return Err(err);
+            }
+            st.deactivated_links.push(link_id.to_string());
             Ok(())
         }
 

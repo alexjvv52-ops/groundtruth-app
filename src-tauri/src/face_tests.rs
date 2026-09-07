@@ -40,7 +40,8 @@ fn face_invoice_mounts_under_to_collect_and_above_settled() {
     );
     let bill = at(&src, "{invoiceBill != null && (");
     let settled = at(&src, "{settledRows.length > 0 && (");
-    let leftover = at(&src, r#"<h2 className="text-lg font-medium">Leftover</h2>"#);
+    // J1-PINS: on the live tree Leftover is a Card on Money, not an h2.
+    let leftover = at(&src, "<CardTitle>Leftover</CardTitle>");
     assert!(
         to_collect < bill,
         "the bill mounts under the live To collect group"
@@ -87,8 +88,8 @@ fn face_invoice_keeps_the_inv_a_field_bytes() {
         r#"<p className="text-base font-medium">Total {cents(invoiceBill.totalCents)}</p>"#,
         "onClick={() => window.print()}",
         "onClick={() => setInvoiceBill(null)}",
-        "\n                Print\n",
-        "\n                Close\n",
+        "\n                  Print\n",
+        "\n                  Close\n",
     ];
     for field in fields {
         assert_eq!(
