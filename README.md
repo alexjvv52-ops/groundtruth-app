@@ -132,7 +132,7 @@ the folder to a USB stick or your own cloud folder on a schedule you
 decide. "Export everything" produces a portable bundle — database, full
 event log, receipts, costs/mileage/assets CSVs with tax lines filled in,
 and a checksum manifest — readable by any SQLite tool or spreadsheet.
-A raw copy of that folder — USB stick or cloud — carries your Stripe key; "Export everything" is the scrubbed copy.
+A raw copy of that folder — USB stick or cloud — carries your Stripe key and pull token sealed to this Windows account, unreadable on another machine or account; "Export everything" leaves them out entirely.
 
 If your laptop dies: install on a new machine, choose "Restore a backup",
 and bring in your bundle. The app refuses files that are not its own

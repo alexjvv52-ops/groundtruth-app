@@ -22,6 +22,7 @@ mod identity;
 mod import;
 mod income;
 mod invoice;
+mod key_at_rest;
 mod leftover;
 mod marketing;
 mod mileage;
@@ -103,6 +104,8 @@ mod income_tests;
 mod inv_a_tests;
 #[cfg(test)]
 mod j4_tests;
+#[cfg(test)]
+mod key_at_rest_tests;
 #[cfg(test)]
 mod key_door_tests;
 #[cfg(test)]
@@ -3316,7 +3319,13 @@ mod tests {
 
     // --- Stage 4 Prompt 2: Stripe key + gateway ---
 
+    /// KEY-AT-REST: the column holds a sealed, tagged value; these tests
+    /// compare the opened plaintext, and `stored_key_raw` pins the tag.
     fn stored_key(conn: &Connection) -> Option<String> {
+        key_at_rest::open(stored_key_raw(conn).as_deref()).value()
+    }
+
+    fn stored_key_raw(conn: &Connection) -> Option<String> {
         conn.query_row(
             "SELECT restricted_key FROM stripe_config WHERE id = 1",
             [],
@@ -3388,6 +3397,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(stored_key(&conn).as_deref(), Some(key));
+        let raw = stored_key_raw(&conn).expect("a stored value");
+        assert!(raw.starts_with(key_at_rest::TAG), "{raw}");
+        #[cfg(windows)]
+        assert!(!raw.contains(key), "the column never holds the plaintext");
         let status = money::money_status(&conn).unwrap();
         assert!(status.configured);
         assert_eq!(status.mode.as_deref(), Some("test"));

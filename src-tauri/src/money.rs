@@ -9,6 +9,7 @@ use crate::attention;
 use crate::db;
 use crate::events;
 use crate::events::{EventRecord, Kind};
+use crate::key_at_rest;
 use crate::models::{AppliedOutcome, MoneyStatus, OrderView, StripeAccountPreview};
 use crate::projection;
 use crate::stripe_client::{self, StripeClient};
@@ -317,6 +318,9 @@ pub(crate) fn store_stripe_key(
     refuse_if_account_mismatch(conn, account)?;
 
     let now = db::utc_now_rfc3339();
+    // KEY-AT-REST: the column holds the sealed, tagged value; the plaintext
+    // stops here.
+    let sealed = key_at_rest::seal(key)?;
     conn.execute(
         "UPDATE stripe_config
          SET restricted_key = ?1,
@@ -325,7 +329,7 @@ pub(crate) fn store_stripe_key(
              mode = ?4,
              configured_at = ?5
          WHERE id = 1",
-        params![key, account.account_id, account.account_name, mode, now],
+        params![sealed, account.account_id, account.account_name, mode, now],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -381,7 +385,10 @@ pub fn gateway_from_db(conn: &Connection) -> Result<StripeClient<stripe_client::
         .optional()
         .map_err(|e| e.to_string())?
         .unwrap_or((None, None));
-    let key = key
+    // KEY-AT-REST: opened on the way to the wire; a blob this account cannot
+    // open reads as not connected (UNWRAP-FAIL A).
+    let key = key_at_rest::open(key.as_deref())
+        .value()
         .filter(|k| !k.is_empty())
         .ok_or_else(|| STRIPE_NOT_CONNECTED_LINE.to_string())?;
     let mode = mode.unwrap_or_else(|| "test".to_string());
@@ -1744,7 +1751,10 @@ pub fn money_status(conn: &Connection) -> Result<MoneyStatus, String> {
         )
         .map_err(|e| e.to_string())?;
 
-    let configured = restricted_key.as_ref().is_some_and(|k| !k.is_empty());
+    // KEY-AT-REST: a sealed value this account cannot open is not connected.
+    let configured = key_at_rest::open(restricted_key.as_deref())
+        .value()
+        .is_some_and(|k| !k.is_empty());
 
     Ok(MoneyStatus {
         configured,

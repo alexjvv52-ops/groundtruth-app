@@ -10,6 +10,7 @@
 //!   (`pull` / `pull_with` here).
 
 use crate::db;
+use crate::key_at_rest;
 use crate::observed::Observed;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -69,12 +70,8 @@ struct PullPayload {
 pub fn config(conn: &Connection) -> Result<ScanConfigView, String> {
     let raw = read_raw(conn)?;
     Ok(ScanConfigView {
+        token_set: token_plain(&raw).is_some(),
         endpoint_url: raw.endpoint_url,
-        token_set: raw
-            .pull_token
-            .as_ref()
-            .map(|t| !t.is_empty())
-            .unwrap_or(false),
         configured_at: raw.configured_at,
     })
 }
@@ -101,7 +98,8 @@ pub fn set_config(
             if trimmed.is_empty() {
                 None
             } else {
-                Some(trimmed.to_string())
+                // KEY-AT-REST: the column holds the sealed, tagged value.
+                Some(key_at_rest::seal(trimmed)?)
             }
         }
         None => current.pull_token.clone(),
@@ -143,12 +141,7 @@ pub(crate) fn endpoint_and_token(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    let token = raw
-        .pull_token
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
+    let token = token_plain(&raw);
     Ok((url, token))
 }
 
@@ -221,11 +214,7 @@ pub fn pull(conn: &Connection, now_utc: &str) -> Result<ScanView, String> {
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    let token = raw
-        .pull_token
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    let token = token_plain(&raw);
     match (url, token) {
         (Some(_), Some(_)) => {
             pull_with(conn, now_utc, ureq_get)?;
@@ -258,12 +247,9 @@ where
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| "Configure a scan endpoint URL before pulling.".to_string())?;
-    let token = raw
-        .pull_token
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| "Configure a pull token before pulling.".to_string())?;
+    let token =
+        token_plain(&raw).ok_or_else(|| "Configure a pull token before pulling.".to_string())?;
+    let token = token.as_str();
 
     let after = cursor(conn)?;
     let url = format!("{}/scans?after={}", endpoint.trim_end_matches('/'), after);
@@ -365,6 +351,16 @@ pub(crate) fn ureq_get(url: &str, token: &str) -> Result<(i32, String), String> 
     }
 }
 
+/// KEY-AT-REST: the pull token as the wire needs it — opened, trimmed,
+/// non-empty. `None` when unset, and `None` when this build or account
+/// cannot open the stored blob (UNWRAP-FAIL A: the readers say "no token").
+fn token_plain(raw: &RawConfig) -> Option<String> {
+    key_at_rest::open(raw.pull_token.as_deref())
+        .value()
+        .map(|t| t.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 fn read_raw(conn: &Connection) -> Result<RawConfig, String> {
     conn.query_row(
         "SELECT endpoint_url, pull_token, configured_at FROM scan_config WHERE id = 1",
@@ -386,12 +382,7 @@ fn is_configured(raw: &RawConfig) -> bool {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .is_some()
-        && raw
-            .pull_token
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .is_some()
+        && token_plain(raw).is_some()
 }
 
 fn newest_observation(conn: &Connection) -> Result<Option<Observation>, String> {

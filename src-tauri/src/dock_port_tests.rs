@@ -7,8 +7,9 @@ use crate::scans;
 use rusqlite::Connection;
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpStream};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 
 /// FI-7 (Q-5) - the port document's top-level key count, in ONE place.
 /// e1 and h1 both assert against it. They were two independent literals and
@@ -53,6 +54,30 @@ fn start_clean(db: Arc<Mutex<Connection>>) -> u16 {
     let _ = std::fs::create_dir_all(&root);
     let view = dock_port::start(db, root.clone(), root, "127.0.0.1:0").unwrap();
     view.port.expect("ephemeral port")
+}
+
+/// J5 - the same door with a short whole-request deadline, the way
+/// `start_clean` passes a loopback bind. Production never calls this.
+fn start_clean_with(db: Arc<Mutex<Connection>>, deadline: Duration) -> u16 {
+    let _ = dock_port::stop();
+    let root = std::env::temp_dir().join("dockdoc-port-paths");
+    let _ = std::fs::create_dir_all(&root);
+    let view = dock_port::start_with(db, root.clone(), root, "127.0.0.1:0", deadline).unwrap();
+    view.port.expect("ephemeral port")
+}
+
+/// J5 - one byte every `step`, `bytes` times, then the socket closes on its
+/// own. Bounded so a red test cannot hold the serialized suite.
+fn trickle(mut stream: TcpStream, bytes: usize, step: Duration) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        for _ in 0..bytes {
+            if stream.write_all(b"G").is_err() {
+                break;
+            }
+            let _ = stream.flush();
+            thread::sleep(step);
+        }
+    })
 }
 
 fn attention_row_count(db: &Arc<Mutex<Connection>>) -> i64 {
@@ -264,6 +289,95 @@ fn t12_stop_ends_the_thread_and_connect_fails() {
         TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_err(),
         "listener must not outlive stop"
     );
+}
+
+/// J5 THREAD A - a client that stops mid-request holds its own handler, not
+/// the door. Before J5 the second request waited behind the first read
+/// timeout and the harness's 2 s client timeout cut it off.
+#[test]
+fn j5a_a_slow_client_does_not_hold_the_door_for_a_second_request() {
+    let _suite = lock_suite();
+    let (db, token) = paired_db();
+    let port = start_clean(db);
+    let mut slow = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+    slow.write_all(b"GET /rea").unwrap();
+    let _ = slow.flush();
+    let started = Instant::now();
+    let (status, _, body) = get(port, "/ready", Some(&token));
+    assert_eq!(status, 200);
+    assert_eq!(body, br#"{"ready":true}"#);
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "the second request waited {:?} behind the slow one",
+        started.elapsed()
+    );
+    drop(slow);
+    let _ = dock_port::stop();
+}
+
+/// J5 STOP A - `stop()` returns while a trickle is in flight: it joins the
+/// accept thread only, and that thread drops the listener on the way out.
+/// The trickler is bounded (20 bytes, 200 ms apart) and `stop()` runs on a
+/// helper thread behind `recv_timeout`, so a red is a timeout, never a hang.
+#[test]
+fn j5b_stop_returns_while_a_trickle_is_open() {
+    let _suite = lock_suite();
+    let (db, _) = paired_db();
+    let port = start_clean(db);
+    let stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+    let trickler = trickle(stream, 20, Duration::from_millis(200));
+    // Give the accept thread a turn to hand the trickle to its handler.
+    thread::sleep(Duration::from_millis(300));
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = tx.send(dock_port::stop());
+    });
+    let stopped: DockPortView = rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("stop() must return while a trickle is open");
+    assert!(!stopped.running);
+    assert_eq!(stopped.port, None);
+    assert!(
+        TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_err(),
+        "listener must not outlive stop"
+    );
+    let _ = trickler.join();
+}
+
+/// J5 DEADLINE A - one byte every 200 ms never trips the 5 s read step, so
+/// only the whole-request deadline can end the request. Through the
+/// `start_with` seam the deadline is 1 s here; production passes 8 s.
+#[test]
+fn j5c_a_trickle_is_cut_at_the_deadline_not_at_the_read_step_or_the_header_cap() {
+    let _suite = lock_suite();
+    let (db, _) = paired_db();
+    let port = start_clean_with(db, Duration::from_secs(1));
+    let stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+    let mut reader = stream.try_clone().unwrap();
+    reader
+        .set_read_timeout(Some(Duration::from_secs(4)))
+        .unwrap();
+    let started = Instant::now();
+    let trickler = trickle(stream, 10, Duration::from_millis(200));
+    let mut buf = Vec::new();
+    let _ = reader.read_to_end(&mut buf);
+    let elapsed = started.elapsed();
+    let (status, _, body) = parse_http(&buf);
+    assert_eq!(
+        status, 400,
+        "the deadline ends the request as a bad request"
+    );
+    assert_eq!(body, br#"{"error":"Bad request."}"#);
+    assert!(
+        elapsed >= Duration::from_millis(900),
+        "cut at {elapsed:?}, before the 1 s deadline"
+    );
+    assert!(
+        elapsed < Duration::from_secs(4),
+        "cut at {elapsed:?}: the deadline did not fire"
+    );
+    let _ = trickler.join();
+    let _ = dock_port::stop();
 }
 
 #[test]

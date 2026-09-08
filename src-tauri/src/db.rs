@@ -1309,6 +1309,9 @@ pub fn open_and_migrate(path: &std::path::Path) -> Result<Connection, String> {
     configure(&conn)?;
     crate::identity::stamp_or_refuse(&conn)?;
     migrate(&conn)?;
+    // KEY-AT-REST (MIGRATE A): seal any pre-wrap plaintext secret, name a
+    // sealed one this account cannot open. Idempotent; no safety snapshot.
+    crate::key_at_rest::seal_at_open(&conn)?;
     // Spine report after every migration (and every open that runs migrate).
     if let Some(parent) = path.parent() {
         crate::event_file::on_app_start(&conn, parent);
@@ -1321,6 +1324,7 @@ pub fn open_in_memory() -> Result<Connection, String> {
     let conn = Connection::open_in_memory().map_err(|e| e.to_string())?;
     configure(&conn)?;
     migrate(&conn)?;
+    crate::key_at_rest::seal_at_open(&conn)?;
     Ok(conn)
 }
 

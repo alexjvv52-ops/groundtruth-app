@@ -8,6 +8,7 @@ use crate::events::Kind;
 use crate::export::{self, Manifest};
 use crate::export_scrub;
 use crate::income::{self, RecordIncomeInput};
+use crate::key_at_rest;
 use crate::marketing;
 use crate::mileage::{self, RecordMileageTripInput};
 use crate::money;
@@ -1606,8 +1607,20 @@ fn export_scrub_bundle_copy_keeps_secrets_home() {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(live_key.as_deref(), Some(key));
-    assert_eq!(live_pull.as_deref(), Some(pull));
+    // KEY-AT-REST: the live columns hold the sealed, tagged values; opened
+    // here, they are the two secrets.
+    for stored in [&live_key, &live_pull] {
+        let stored = stored.as_deref().expect("the live column is set");
+        assert!(stored.starts_with(key_at_rest::TAG), "{stored}");
+    }
+    assert_eq!(
+        key_at_rest::open(live_key.as_deref()).value().as_deref(),
+        Some(key)
+    );
+    assert_eq!(
+        key_at_rest::open(live_pull.as_deref()).value().as_deref(),
+        Some(pull)
+    );
     // Bundle copy: both NULL; the columns beside them untouched.
     let copy = Connection::open(bundle.join("farm.db")).unwrap();
     let (copy_key, copy_account): (Option<String>, Option<String>) = copy

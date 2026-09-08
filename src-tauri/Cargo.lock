@@ -2608,6 +2608,7 @@ dependencies = [
  "tauri-plugin-opener",
  "ureq",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

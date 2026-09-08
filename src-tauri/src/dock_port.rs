@@ -6,6 +6,10 @@
 //! Only `DeviceResolution::Live` passes. Production binds `DOCK_BIND`.
 //! Tests pass a loopback ephemeral bind into the same `start`. The listener
 //! does not start itself.
+//!
+//! J5 DOCK-ACCEPT (signed 2026-09-07): every accepted connection runs on its
+//! own thread under one whole-request deadline; the accept thread only
+//! accepts, and `stop()` joins that thread alone.
 
 use crate::field_devices::{self, DeviceResolution};
 use rusqlite::Connection;
@@ -16,9 +20,15 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const HEADER_CAP: usize = 8192;
+/// J5 DEADLINE A: one connection may hold its handler for this long, first
+/// byte to last write. Monotonic, never a wall-clock read.
+const REQUEST_DEADLINE: Duration = Duration::from_secs(8);
+/// One read waits this long at most, and never past the deadline.
+const READ_STEP: Duration = Duration::from_secs(5);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const READY_BODY: &str = r#"{"ready":true}"#;
 const BAD_REQUEST: &str = r#"{"error":"Bad request."}"#;
 const FORBIDDEN: &str = r#"{"error":"Forbidden."}"#;
@@ -51,6 +61,19 @@ pub fn start(
     snapshots_dir: PathBuf,
     bind: &str,
 ) -> Result<DockPortView, String> {
+    start_with(db, farm_dir, snapshots_dir, bind, REQUEST_DEADLINE)
+}
+
+/// J5 DOCK-ACCEPT: the same door with the whole-request deadline passed in.
+/// Production reaches it through `start` with `REQUEST_DEADLINE`; tests pass
+/// a short one the way they pass a loopback bind.
+pub(crate) fn start_with(
+    db: Arc<Mutex<Connection>>,
+    farm_dir: PathBuf,
+    snapshots_dir: PathBuf,
+    bind: &str,
+    deadline: Duration,
+) -> Result<DockPortView, String> {
     let mut slot = PORT.lock().map_err(|e| e.to_string())?;
     if let Some(running) = slot.as_ref() {
         return Ok(port_view(true, Some(running.port)));
@@ -60,7 +83,8 @@ pub fn start(
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let stop = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&stop);
-    let thread = thread::spawn(move || accept_loop(listener, flag, db, farm_dir, snapshots_dir));
+    let thread =
+        thread::spawn(move || accept_loop(listener, flag, db, farm_dir, snapshots_dir, deadline));
     *slot = Some(Running {
         port,
         stop,
@@ -69,6 +93,9 @@ pub fn start(
     Ok(port_view(true, Some(port)))
 }
 
+/// J5 STOP A: sets the flag and joins the accept thread only. That thread
+/// owns the listener and drops it on the way out, so a connect after `stop`
+/// fails; an in-flight handler is detached and ends by its own deadline.
 pub fn stop() -> DockPortView {
     let running = match PORT.lock() {
         Ok(mut slot) => slot.take(),
@@ -113,31 +140,37 @@ fn lan_reach_url(port: Option<u16>) -> Option<String> {
     Some(format!("http://{ip}:{p}"))
 }
 
+/// J5 THREAD A: the accept thread only accepts. Each connection runs on its
+/// own thread with its own deadline, so a slow client holds one handler —
+/// never the door, never `stop()`.
 fn accept_loop(
     listener: TcpListener,
     stop: Arc<AtomicBool>,
     db: Arc<Mutex<Connection>>,
     farm_dir: PathBuf,
     snapshots_dir: PathBuf,
+    deadline: Duration,
 ) {
+    let farm_dir: Arc<Path> = Arc::from(farm_dir);
+    let snapshots_dir: Arc<Path> = Arc::from(snapshots_dir);
     loop {
+        // The flag is read first, every turn, so a run of successful accepts
+        // can never starve it.
+        if stop.load(Ordering::SeqCst) {
+            break;
+        }
         match listener.accept() {
-            Ok((stream, _)) => handle_stream(stream, &db, &farm_dir, &snapshots_dir),
-            Err(e)
-                if e.kind() == std::io::ErrorKind::WouldBlock
-                    || e.kind() == std::io::ErrorKind::Interrupted =>
-            {
-                if stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                thread::sleep(Duration::from_millis(100));
+            Ok((stream, _)) => {
+                let db = Arc::clone(&db);
+                let farm_dir = Arc::clone(&farm_dir);
+                let snapshots_dir = Arc::clone(&snapshots_dir);
+                // Detached on purpose (STOP A): the handle is dropped, the
+                // handler ends by its own deadline or the client's close.
+                thread::spawn(move || {
+                    handle_stream(stream, &db, &farm_dir, &snapshots_dir, deadline)
+                });
             }
-            Err(_) => {
-                if stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                thread::sleep(Duration::from_millis(100));
-            }
+            Err(_) => thread::sleep(Duration::from_millis(100)),
         }
     }
 }
@@ -147,11 +180,15 @@ fn handle_stream(
     db: &Arc<Mutex<Connection>>,
     farm_dir: &Path,
     snapshots_dir: &Path,
+    deadline: Duration,
 ) {
+    // DEADLINE A: one monotonic instant for the whole request. The mutex wait
+    // in `with_conn` sits outside it on purpose — the desk's single writer
+    // is never cut short by a phone.
+    let due = Instant::now() + deadline;
     let _ = stream.set_nonblocking(false);
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
-    let headers = match read_headers(&mut stream) {
+    let _ = stream.set_write_timeout(Some(WRITE_TIMEOUT));
+    let headers = match read_headers(&mut stream, due) {
         Ok(h) => h,
         Err(()) => {
             write_response(&mut stream, 400, BAD_REQUEST, false);
@@ -236,13 +273,22 @@ struct Parsed {
     token: Option<String>,
 }
 
-fn read_headers(stream: &mut TcpStream) -> Result<Vec<u8>, ()> {
+fn read_headers(stream: &mut TcpStream, due: Instant) -> Result<Vec<u8>, ()> {
     let mut buf = Vec::new();
     let mut tmp = [0u8; 512];
     loop {
         if buf.len() >= HEADER_CAP {
             return Err(());
         }
+        // DEADLINE A: each read waits READ_STEP at most and never past `due`,
+        // so one byte per read cannot stretch a request past the deadline.
+        let remaining = due.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(());
+        }
+        stream
+            .set_read_timeout(Some(remaining.min(READ_STEP)))
+            .map_err(|_| ())?;
         let room = HEADER_CAP - buf.len();
         let nread = tmp.len().min(room);
         let n = stream.read(&mut tmp[..nread]).map_err(|_| ())?;
