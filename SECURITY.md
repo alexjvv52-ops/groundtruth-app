@@ -1,21 +1,23 @@
-# Security Policy
+# Security policy
 
-## Supported Versions
+## Supported versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+| Version | Supported |
+| ------- | --------- |
+| 0.1.2 — the release marked **Latest** | yes |
+| 0.1.1, v0.1.0 and anything older | no — install the latest release |
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+## Reporting a vulnerability
 
-## Reporting a Vulnerability
+Open the **Security** tab of this repository and use **Report a vulnerability**
+(GitHub's private vulnerability reporting). If that form is not available to
+you, open an issue in this repository titled `Security:` with the steps to
+reproduce. Leave real farm data and keys out of the report.
 
-Use this section to tell people how to report a vulnerability.
+You will get a reply on the report itself. A confirmed problem is fixed in a
+release and named in that release's notes; a report that turns out not to be a
+vulnerability is closed with the reason.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Groundtruth runs on your PC. Most reports will be about the local farm folder,
+the optional LAN dock, the optional checkout and scan workers, or the Stripe
+key door — say which one you mean.

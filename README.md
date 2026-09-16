@@ -4,7 +4,7 @@ One app that answers two questions: what should I do right now, and are my
 numbers true.
 
 Groundtruth runs the business, not only the beds — the farm file is the books.
-the free offline farm ledger that opens each morning on the promised-vs-sown gap and can prove its history.
+The free offline farm ledger that opens each morning on the promised-vs-sown gap and can prove its history.
 
 It runs on your Windows computer. There is no account, no subscription, and
 no cloud. Nothing leaves your machine unless you export it and hand it over
@@ -68,7 +68,7 @@ in plain words, when the data cannot support an answer.
 
 ## Install on Windows
 
-Download `Groundtruth_0.1.0_x64-setup.exe` from the Releases page and run it:
+Download the installer marked **Latest** on the Releases page — `Groundtruth_<version>_x64-setup.exe` — and run it:
 https://github.com/alexjvv52-ops/groundtruth-app/releases
 Windows x64 only; it installs under a normal user account, no administrator needed.
 
@@ -114,11 +114,12 @@ After the build, run the generated installer in `nsis/` or `msi/`.
 5. To send a **Payment link** instead of taking cash, connect Stripe: on
    **Money**, under Wholesale, press **Connect Stripe**. The sheet names
    the exact restricted-key permissions to turn on, so there is nothing to
-   look up here. A test key or a live key is accepted (GT-D13-R) — a test
+   look up here. A test key or a live key is accepted — a test
    key takes test cards only, a live key takes real money. The key is
    config on this machine, not an event: it stays in that same farm folder
    and is scrubbed out of any bundle you export, so you re-enter it after
    a restore.
+   Every payment link bills in US dollars.
 
 ## Your data
 
@@ -140,6 +141,20 @@ and bring in your bundle. The app refuses files that are not its own
 to merge two different farms, and after any restore it rebuilds its log to
 match the database exactly, archiving the old log read-only — nothing is
 ever deleted.
+
+## Logs and audit
+
+Every change to the farm is a new entry in an append-only event log kept beside
+the database, with its kind and timestamp. Entries are never edited in place.
+Corrections and voids are new entries too; the trail stays visible on Money
+and Books.
+On Health, **Run System Scan** replays the event log against the database and
+says in plain words whether they still match.
+After a restore, the app rebuilds the log to match the database and archives
+the old log read-only.
+Honest limit: this is a one-operator desk. "Who" is the person at this PC —
+there are no logins or per-person stamps — and the export is not a signed
+inspection pack. Details: `docs/manual/integrity.md`.
 
 ## How mature is this?
 
