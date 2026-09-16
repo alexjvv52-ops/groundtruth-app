@@ -7,8 +7,8 @@
 //! after the To collect group and before the Settled group, so a live unpaid
 //! wholesale or leftover row opens its bill without first opening "Show N
 //! older settled" — and it still sits above Leftover, the tree's own slot, not
-//! a third one; the INV-A field bytes are unchanged (number, line, total,
-//! Print, Close, window.print); Money loads the display name through
+//! a third one; the INV-A field bytes are unchanged (the SEND-THE-BILL title,
+//! line, total, Print, Close, window.print); Money loads the display name through
 //! farmDisplayName(), the same reader and the same command Settings uses, with
 //! no second store and no setter on Money; and a failed load prints the
 //! errMessage sentence, never String(e). No SCHEMA_VERSION literal here —
@@ -83,7 +83,7 @@ fn face_invoice_is_not_behind_the_settled_disclosure() {
 fn face_invoice_keeps_the_inv_a_field_bytes() {
     let src = money();
     let fields = [
-        r#"<p className="text-sm">Invoice {invoiceBill.number}</p>"#,
+        r#"<p className="text-sm">{billTitle(invoiceBill)}</p>"#,
         "{line.cropName} · {line.trays} trays × {cents(line.priceCentsPerTray)} = {cents(line.lineTotalCents)}",
         r#"<p className="text-base font-medium">Total {cents(invoiceBill.totalCents)}</p>"#,
         "onClick={() => window.print()}",

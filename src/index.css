@@ -117,6 +117,72 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* DESK-LIFE B1 - screen only: tabular digits, balanced titles, no orphans, a focus
+     ring for controls that carry none, stillness for people who asked for it.
+     The print blocks below are untouched. */
+  @media screen {
+    body {
+      font-variant-numeric: tabular-nums;
+    }
+    h1 {
+      text-wrap: balance;
+    }
+    p,
+    li {
+      text-wrap: pretty;
+    }
+    :where(:focus-visible):not([class*="focus-visible:"]) {
+      outline: 2px solid var(--ring);
+      outline-offset: 2px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-in,
+    .animate-out {
+      animation: none !important;
+    }
+  }
+}
+
+/* CAPACITY-FACE - the rack on Today: one cell per live tray (FACE A). Screen
+   only; the :root tokens above and the print roots below are untouched. Colour
+   is var(--token) only: light var(--foreground), blackout var(--muted-foreground),
+   hollow var(--card) inside var(--border). WIDTH A - the rack is a flow block
+   in the 28rem column at every window size; the 900 px rail that hung it off
+   Today's <main> is retired, and the App shell stays max-w-md. */
+@layer components {
+  .rack {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 0.75rem);
+    gap: 0.25rem;
+    width: 100%;
+  }
+  .rack-cell {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 2px;
+    border: 1px solid var(--border);
+    background: var(--card);
+  }
+  .rack-cell[data-stage="light"] {
+    border-color: var(--foreground);
+    background: var(--foreground);
+  }
+  .rack-cell[data-stage="blackout"] {
+    border-color: var(--muted-foreground);
+    background: var(--muted-foreground);
+  }
+  .rack-rail {
+    width: 100%;
+  }
+  /* STATES A - the loading face: the fact, the rack and the first card as
+     blocks of var(--border), in the flow they will take. No motion, no
+     spinner. --muted equals --background and would vanish; --border is the
+     visible fill already on the list. */
+  .skeleton-block {
+    background: var(--border);
+    border-radius: var(--radius);
+  }
 }
 
 @media print {
@@ -144,6 +210,13 @@
     color: #000;
   }
   .invoice-print button {
+    display: none;
+  }
+  /* SEND-THE-BILL - one clean page: while a bill is in the DOM, everything that is
+     not the bill, inside it, or on the way down to it leaves the flow, so the
+     hidden screen beneath it no longer paginates. Today's pack sheet has no bill
+     in its DOM, so this never touches .pack-print. */
+  body:has(.invoice-print) *:not(.invoice-print):not(.invoice-print *):not(:has(.invoice-print)) {
     display: none;
   }
 }

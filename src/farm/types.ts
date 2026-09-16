@@ -818,6 +818,7 @@ export type DockPortView = {
   running: boolean;
   port: number | null;
   reachUrl: string | null;
+  reachQr: boolean[][] | null;
 };
 
 export type DockCardId =
@@ -835,11 +836,13 @@ export type WorstClash = {
   rank: number;
   sentence: string | null;
   cards: string[] | null;
+  owner: string | null;
 };
 
 export type DockCard = {
   card: DockCardId;
   severity: Severity | null;
+  weight: number | null;
   checkIds: string[];
   sentence: string | null;
   oldestRanAt: string | null;

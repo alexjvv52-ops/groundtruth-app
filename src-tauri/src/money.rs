@@ -688,6 +688,12 @@ fn apply_paid_session_gated(
     })
 }
 
+/// GT-D13-USD (SEAL CAD-OR-USD): the mint bills usd; cad is history. A paid
+/// session in either currency reaches the cents check; any other is refused.
+fn link_currency_ok(currency: &str) -> bool {
+    currency.eq_ignore_ascii_case("usd") || currency.eq_ignore_ascii_case("cad")
+}
+
 /// TILL-A (GT-D22). Never inserts an orders row. Books cash only through
 /// wholesale::pay_order_from_link_session; everything else is a named fact.
 fn apply_wholesale_link_session(
@@ -725,7 +731,7 @@ fn apply_wholesale_link_session(
     let Some(total) = order.priced_total_cents else {
         return refuse_wholesale_link_session(conn, session, "wholesale_amount_mismatch", detail);
     };
-    if !session.currency.eq_ignore_ascii_case("cad") || session.amount_cents != total {
+    if !link_currency_ok(&session.currency) || session.amount_cents != total {
         return refuse_wholesale_link_session(conn, session, "wholesale_amount_mismatch", detail);
     }
     let paid_on = db::local_date_from_utc_rfc3339(&session.paid_at)?;
@@ -796,7 +802,7 @@ fn apply_leftover_link_session(
     let Some(total) = listing.priced_total_cents else {
         return refuse_leftover_link_session(conn, session, "leftover_amount_mismatch", detail);
     };
-    if !session.currency.eq_ignore_ascii_case("cad") || session.amount_cents != total {
+    if !link_currency_ok(&session.currency) || session.amount_cents != total {
         return refuse_leftover_link_session(conn, session, "leftover_amount_mismatch", detail);
     }
     crate::leftover::pay_listing_from_link_session(

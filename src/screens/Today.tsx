@@ -12,6 +12,7 @@ import type {
   OwedSummary,
   PhoneCaptureView,
   SeedOnHandRow,
+  ShelfCapacity,
   StageView,
   StandingDemandView,
   TodayView,
@@ -43,6 +44,7 @@ import {
   resolveAttention,
   scanConfig,
   seedOnHand,
+  shelfCapacity,
   sowTray,
   standingDemand,
   todayView,
@@ -323,10 +325,10 @@ function deliveryWord(n: number): string {
  */
 /** Large, single-action: the whole card is the tap. Unchanged from the pre-split screen. */
 const actionCardClass =
-  "flex min-h-24 cursor-pointer items-center justify-center p-8 text-center text-xl font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
+  "flex min-h-24 cursor-pointer items-center justify-center p-8 text-center text-xl font-medium transition-colors active:translate-y-px hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
 /** Card, single-action: the whole card is still the tap (D2 — tap targets do not shrink). */
 const tapCardClass =
-  "flex min-h-16 cursor-pointer items-center p-6 text-left text-base font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
+  "flex min-h-16 cursor-pointer items-center p-6 text-left text-base font-medium transition-colors active:translate-y-px hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
 function tapCardClassFor(large: boolean): string {
   return large ? actionCardClass : tapCardClass;
 }
@@ -358,9 +360,63 @@ function primaryClassFor(large: boolean): string {
 /** D3 — "Not today" is a quiet text control on the same card; still a 44 px tap target. */
 const quietTextClass =
   "flex min-h-11 items-center self-start text-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
-/** First-run verbs ("Start here"). Unchanged. */
-const verbCardClass =
-  "flex min-h-16 cursor-pointer items-center justify-center p-6 text-center text-lg font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
+/** First-run verbs ("Start here") — DESK-LIFE: rows 2-5 as a numbered list; the first
+ *  undone verb takes actionCardClass. Card's base is flex-col, so the row says flex-row. */
+const verbRowClass =
+  "flex min-h-12 cursor-pointer flex-row items-center gap-3 px-4 py-3 text-left text-base font-medium transition-colors active:translate-y-px hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
+/** DESK-LIFE — 150 ms reveal for a block a disclosure just opened (tw-animate-css, index.css:2).
+ *  motion-reduce and the index.css reduced-motion rule both still it. */
+const revealClass =
+  "animate-in fade-in-0 slide-in-from-top-1 duration-150 motion-reduce:animate-none";
+/**
+ * CAPACITY-FACE (FACE A / PACKET A / EMPTY A) — the rack: one cell per live tray,
+ * read from the TrayView[] the probe already loads (list_trays, trayRows): the
+ * rows today_view sums into activeTrayCount (trays.rs — planned, sown, blackout,
+ * light; quantity per row). Cells sit light first, then blackout. sow_tray lands
+ * a tray in blackout and no production writer lands planned or sown (the one
+ * 'sown' insert is a cfg(test) helper), so those two states, should a row ever
+ * carry one, count with blackout (not yet under the lights) rather than vanish
+ * from the rack. Harvest-due is the engine's own harvestSummary.trayCount — no
+ * date is compared here, no clock. CEILING — the ceiling is Settings' shelf
+ * space (shelf_capacity; the probe reads it through shelfCapacity beside
+ * scan_config): N = lightSlots + blackoutSlots only when both are set; one
+ * blank, or an unreadable read, and N is unknown — the face says
+ * "ceiling not set" and never invents N. Known N: hollow cells fill the rack
+ * to N after the live cells (none when live ≥ N — every live cell still paints
+ * and the caption still counts them). Unknown N: an empty farm draws
+ * EMPTY_RACK_CELLS hollow cells, a live farm draws none. Display only —
+ * nothing here feeds the sow door, standing, seed, leftover or money.
+ */
+const EMPTY_RACK_CELLS = 6;
+type RackFace = {
+  light: number;
+  blackout: number;
+  due: number;
+  ceiling: number | null;
+  hollow: number;
+};
+function rackFaceFor(
+  trays: TrayView[],
+  view: TodayView | null,
+  shelf: ShelfCapacity | null,
+): RackFace {
+  let light = 0;
+  let blackout = 0;
+  for (const t of trays) {
+    if (t.state === "light") light += t.quantity;
+    else if (t.state === "blackout" || t.state === "sown" || t.state === "planned") {
+      blackout += t.quantity;
+    }
+  }
+  const live = light + blackout;
+  const ceiling =
+    shelf != null && shelf.lightSlots != null && shelf.blackoutSlots != null
+      ? shelf.lightSlots + shelf.blackoutSlots
+      : null;
+  const hollow =
+    ceiling == null ? (live === 0 ? EMPTY_RACK_CELLS : 0) : Math.max(0, ceiling - live);
+  return { light, blackout, due: view?.harvestSummary?.trayCount ?? 0, ceiling, hollow };
+}
 /**
  * Receipts sort as one block strictly below every live row (see the sort below), so
  * this value only orders receipts among themselves. Deliberately above every rank in
@@ -437,7 +493,8 @@ export function Today({
   newPaidCount: number;
   pollTick: number;
   onOpenMoney: (focus?: MoneyFocus) => void;
-  onOpenMarketing: () => void;
+  /** FIRST-15 — "Add your first venue" lands in Marketing's new-venue mode. Navigation only. */
+  onOpenMarketing: (focus?: "new-venue") => void;
   /** Settings fence 1 (S4): the optional scan-endpoint first-run verb opens Settings. */
   onOpenSettings: () => void;
   /** B2-F1 (B2-D4): the phone-captures pointer taps through to Farm. Navigation only. */
@@ -509,6 +566,10 @@ export function Today({
   // The ranked queue is bounded: the rest of the live work sits behind this control,
   // collapsed on every load. Receipts are never behind it — there is at most one.
   const [queueOpen, setQueueOpen] = useState(false);
+  // CAPACITY-FACE (PACKET A) — the packet is open or closed; nothing persists.
+  const [rackOpen, setRackOpen] = useState(false);
+  // CEILING — Settings' shelf space as the probe last read it; null until it answers.
+  const [shelf, setShelf] = useState<ShelfCapacity | null>(null);
   const [coverage, setCoverage] = useState<Record<string, HarvestCommitmentsView>>({});
   async function probeFarmShape(v: TodayView) {
     try {
@@ -525,6 +586,12 @@ export function Today({
       } catch {
         scanConfigured = false;
       }
+      // CEILING — same grammar as scan_config: an unreadable ceiling is unknown, never a probe failure.
+      try {
+        setShelf(await shelfCapacity());
+      } catch {
+        setShelf(null);
+      }
       setShape({
         venues: venues.length,
         stagesBeyondLead: stages.some((s: StageView) => s.stage !== "lead"),
@@ -536,6 +603,7 @@ export function Today({
       setShape(null); // probe failed — claim nothing, show nothing extra
       setStageRows([]);
       setTrayRows([]);
+      setShelf(null);
     }
   }
   async function refresh() {
@@ -1122,6 +1190,9 @@ export function Today({
   const orderedDates = orderedDatesFor(wholesale);
   const selectedDate = packs.length > 0 ? packs[0].harvestDate : chosenDate;
   const standingLines = standingLinesFor(stageRows, crops);
+  // CAPACITY-FACE — the rack's face, derived from rows already in state: no second read.
+  const rack = rackFaceFor(trayRows, view, shelf);
+  const rackLive = rack.light + rack.blackout;
   // B1-F1 (D2) — every row is pushed with a render function; the grammar is
   // chosen at render by position (first row large, all others card).
   const rows: QueueRow[] = [];
@@ -1273,7 +1344,7 @@ export function Today({
           <Button
             type="button"
             className={primaryClassFor(large)}
-            onClick={onOpenMarketing}
+            onClick={() => onOpenMarketing()}
           >
             Confirm
           </Button>
@@ -1603,9 +1674,40 @@ export function Today({
     shape !== null && !(venueDone && demandDone && sowDone);
   const recoveryVisible = shape?.noRecords === true && !startedFresh;
   const phoneCapturesPending = attention.filter((a) => a.kind === "phone.proposal").length;
+  // DESK-LIFE — the same five verbs, same conditions, same handlers, same order, same
+  // bytes; rendered as one desk: the first undone verb large, the rest numbered rows.
+  // The step number is static (venue 1 … scan 5) so a done step leaves its number behind.
+  const firstRunVerbs: { n: number; text: string; onTap: () => void }[] = [
+    ...(!venueDone
+      ? [{ n: 1, text: "Add your first venue", onTap: () => onOpenMarketing("new-venue") }]
+      : []),
+    ...(!demandDone
+      ? [{ n: 2, text: "Record a standing order or drop a sample", onTap: () => onOpenMarketing() }]
+      : []),
+    ...(!sowDone
+      ? [{ n: 3, text: "Sow trays to cover that demand", onTap: () => setSheetOpen(true) }]
+      : []),
+    ...(wholesale != null && wholesale.length === 0
+      ? [{ n: 4, text: "Record your first wholesale order", onTap: () => onOpenMoney() }]
+      : []),
+    ...(shape?.scanConfigured === false
+      ? [{ n: 5, text: "Configure scan endpoint (optional)", onTap: () => onOpenSettings() }]
+      : []),
+  ];
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-8 px-6 py-12">
-      <h1 className="text-3xl font-semibold tracking-tight">Today</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Today</h1>
+      {/* STATES A — the loading face. While the probe has not answered, the
+          fact, the rack and the first card stand as blocks of var(--border) in
+          the flow they will take (index.css .skeleton-block). No spinner word,
+          no motion: the sentences arrive with their own paint. */}
+      {loading && (
+        <div className="flex flex-col gap-8" aria-hidden="true">
+          <div className="skeleton-block h-9 w-2/3" />
+          <div className="skeleton-block h-12 w-full" />
+          <div className="skeleton-block h-24 w-full" />
+        </div>
+      )}
       {/* B1-F1 (D4) — the owed line renders when something is owed or when the
           register is unreadable. "Nothing owed to you." no longer renders: on a
           clean morning Today is one sentence and Health M1 carries the
@@ -1613,10 +1715,58 @@ export function Today({
           the attention table, so "Not today" can never quiet this line.
           OWED-LO (audit R-2): priced-unpaid leftover is owed — the gate
           counts it, so leftover-only owed prints here too. */}
-      {(owed == null || owed.deliveries > 0 || owed.leftoverCount > 0) && (
-        <p className="text-base font-medium">{owedLine(owed)}</p>
+      {!loading && (owed == null || owed.deliveries > 0 || owed.leftoverCount > 0) && (
+        <p className="text-3xl font-medium tabular-nums">{owedLine(owed)}</p>
       )}
       <ErrorLine message={lastError} />
+      {/* CAPACITY-FACE (WIDTH A) — the rack. It sits here in the 28rem column
+          as a flow block at every window size (index.css .rack-rail; the 900 px
+          absolute rail hung off this <main> is retired, and the App shell stays
+          max-w-md). One control, the tree's own disclosure grammar: tap opens the
+          packet (under the lights / in blackout / to harvest today) on this
+          screen, a second tap or Close dismisses it. Cells are aria-hidden; the
+          caption carries the count and, while N is unknown, the mute ceiling
+          line. Rendered only once the probe has answered (shape !== null) — an
+          unreadable farm claims no rack. */}
+      {!loading && shape !== null && (
+        <aside className="rack-rail flex flex-col gap-2" aria-label="Rack">
+          <button
+            type="button"
+            aria-expanded={rackOpen}
+            onClick={() => setRackOpen((v) => !v)}
+            className="flex min-h-11 flex-col items-start gap-2 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <span className="rack" aria-hidden="true">
+              {Array.from({ length: rack.light }, (_, i) => (
+                <span key={`light-${i}`} className="rack-cell" data-stage="light" />
+              ))}
+              {Array.from({ length: rack.blackout }, (_, i) => (
+                <span key={`blackout-${i}`} className="rack-cell" data-stage="blackout" />
+              ))}
+              {Array.from({ length: rack.hollow }, (_, i) => (
+                <span key={`hollow-${i}`} className="rack-cell" />
+              ))}
+            </span>
+            <span className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span aria-hidden="true">{rackOpen ? "▾" : "▸"}</span>
+              {rackLive === 0 ? "Nothing on the rack" : `${trayCountLabel(rackLive)} on the rack`}
+            </span>
+            {rack.ceiling == null && (
+              <span className="text-sm text-muted-foreground">ceiling not set</span>
+            )}
+          </button>
+          {rackOpen && (
+            <div className={`flex flex-col gap-1 ${revealClass}`}>
+              <p className="text-sm">{trayCountLabel(rack.light)} under the lights</p>
+              <p className="text-sm">{trayCountLabel(rack.blackout)} in blackout</p>
+              <p className="text-sm">{trayCountLabel(rack.due)} to harvest today</p>
+              <button type="button" className={quietTextClass} onClick={() => setRackOpen(false)}>
+                Close
+              </button>
+            </div>
+          )}
+        </aside>
+      )}
       {!loading && folds != null && rows.length > 0 && (
         <div className="flex flex-col gap-6">
           {shownLive.map((r, i) => (
@@ -1634,7 +1784,11 @@ export function Today({
             </button>
           )}
           {queueOpen &&
-            restLive.map((r) => <div key={r.key}>{r.render(false)}</div>)}
+            restLive.map((r) => (
+              <div key={r.key} className={revealClass}>
+                {r.render(false)}
+              </div>
+            ))}
           {receiptRows.map((r) => (
             <div key={r.key}>{r.render(false)}</div>
           ))}
@@ -1645,7 +1799,7 @@ export function Today({
           today (raise_or_refresh re-raises anything not dismissed today), so
           the sentence says so instead of claiming nothing. */}
       {!loading && folds != null && liveRows.length === 0 && !firstRunVisible && (
-        <p className="text-xl font-medium">
+        <p className="text-3xl font-medium tabular-nums">
           {owed != null && owed.deliveries > 0
             ? `Nothing forced right now — ${deliveryWord(owed.deliveries)} set aside for today.`
             : "Nothing forced right now."}
@@ -1658,88 +1812,32 @@ export function Today({
           order row exists — and, like the scan verb, never keeps the block
           alive on its own. */}
       {!loading && firstRunVisible && (
-        <div className="flex flex-col gap-3">
+        <div className={`flex flex-col gap-3 ${revealClass}`}>
           <p className="text-sm text-muted-foreground">Start here</p>
-          {!venueDone && (
+          {firstRunVerbs.map(({ n, text, onTap }, i) => (
             <Card
+              key={n}
               role="button"
               tabIndex={0}
-              onClick={onOpenMarketing}
+              onClick={() => onTap()}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  onOpenMarketing();
+                  onTap();
                 }
               }}
-              className={verbCardClass}
+              className={i === 0 ? actionCardClass : verbRowClass}
             >
-              Add your first venue
+              {i === 0 ? (
+                text
+              ) : (
+                <>
+                  <span className="w-5 shrink-0 text-sm text-muted-foreground">{n}</span>
+                  <span>{text}</span>
+                </>
+              )}
             </Card>
-          )}
-          {!demandDone && (
-            <Card
-              role="button"
-              tabIndex={0}
-              onClick={onOpenMarketing}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onOpenMarketing();
-                }
-              }}
-              className={verbCardClass}
-            >
-              Record a standing order or drop a sample
-            </Card>
-          )}
-          {!sowDone && (
-            <Card
-              role="button"
-              tabIndex={0}
-              onClick={() => setSheetOpen(true)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setSheetOpen(true);
-                }
-              }}
-              className={verbCardClass}
-            >
-              Sow trays to cover that demand
-            </Card>
-          )}
-          {wholesale != null && wholesale.length === 0 && (
-            <Card
-              role="button"
-              tabIndex={0}
-              onClick={() => onOpenMoney()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onOpenMoney();
-                }
-              }}
-              className={verbCardClass}
-            >
-              Record your first wholesale order
-            </Card>
-          )}
-          {shape?.scanConfigured === false && (
-            <Card
-              role="button"
-              tabIndex={0}
-              onClick={onOpenSettings}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onOpenSettings();
-                }
-              }}
-              className={verbCardClass}
-            >
-              Configure scan endpoint (optional)
-            </Card>
-          )}
+          ))}
         </div>
       )}
       {/* B1-F1 (D8) — the recovery card is now a one-line door with the same
@@ -1791,7 +1889,7 @@ export function Today({
             Upcoming &amp; later ({upcomingCount})
           </button>
           {upcomingOpen && (
-            <div className="flex flex-col gap-4">
+            <div className={`flex flex-col gap-4 ${revealClass}`}>
               {upcomingAttention.map((item) => (
                 <Card key={item.id} className="flex flex-col gap-4 p-6">
                   <p className="text-base font-medium leading-snug">

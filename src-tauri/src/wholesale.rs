@@ -414,8 +414,8 @@ pub fn validate_wholesale_event(event: &EventRecord) -> Result<(), String> {
             if p.amount_cents < 1 {
                 return Err("amount_cents must be at least 1".into());
             }
-            if p.currency != "cad" {
-                return Err("currency must be cad (GT-D13)".into());
+            if p.currency != "usd" && p.currency != "cad" {
+                return Err("currency must be usd or cad (GT-D13-USD)".into());
             }
             validate_calendar_date(&p.minted_on, "minted_on")?;
         }
@@ -1311,7 +1311,7 @@ pub fn mint_payment_link_with<G: crate::money::StripeGateway>(
         payment_link_url,
         client_reference: bill.client_reference,
         amount_cents: total,
-        currency: "cad".to_string(),
+        currency: "usd".to_string(),
         minted_on,
     };
     let event = EventRecord::originated(
@@ -1814,7 +1814,7 @@ pub(crate) fn retire_order_link(
     }
 }
 
-/// The desk doors (Paid…, Void): the key on file, if any. No key means no
+/// The desk doors (Paid…, Apply income, Void): the key on file, if any. No key means no
 /// Stripe to talk to and nothing to retire against; the local event stands.
 pub(crate) fn retire_order_link_from_db(conn: &Connection, order: &WholesaleOrderView) {
     if order.payment_link_id.is_none() {

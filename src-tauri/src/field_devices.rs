@@ -107,6 +107,25 @@ pub fn admin_status(conn: &Connection) -> Result<AdminPhoneView, String> {
     }
 }
 
+/// The `?c=<id>:<name>&c=…` suffix of the pairing link and nothing else:
+/// crop names only, percent-encoded, in `list_crops` order. No token, no
+/// endpoint, no path. Empty when the farm has no crops. Job 4 put this on
+/// the port document so the capture page can offer crops without the wire
+/// ever carrying the phone's key.
+pub fn crop_query(conn: &Connection) -> Result<String, String> {
+    let mut q = String::new();
+    let mut sep = '?';
+    for c in trays::list_crops(conn)? {
+        q.push(sep);
+        q.push_str("c=");
+        q.push_str(&crate::marketing::percent_encode(&c.id));
+        q.push(':');
+        q.push_str(&crate::marketing::percent_encode(&c.name));
+        sep = '&';
+    }
+    Ok(q)
+}
+
 /// `{endpoint}/a/{token}?c=<id>:<name>&c=…` — crop names ride in the link and are
 /// never persisted at the endpoint (GT-D21). `None` when no scan endpoint is
 /// configured: the endpoint is a worker for standing requests, pack scans and
@@ -119,17 +138,8 @@ pub fn pairing_link(conn: &Connection, token: &str) -> Result<Option<String>, St
     let Some(endpoint) = endpoint else {
         return Ok(None);
     };
-    let mut url = format!("{endpoint}/a/{token}");
-    let mut sep = '?';
-    for c in trays::list_crops(conn)? {
-        url.push(sep);
-        url.push_str("c=");
-        url.push_str(&crate::marketing::percent_encode(&c.id));
-        url.push(':');
-        url.push_str(&crate::marketing::percent_encode(&c.name));
-        sep = '&';
-    }
-    Ok(Some(url))
+    let query = crop_query(conn)?;
+    Ok(Some(format!("{endpoint}/a/{token}{query}")))
 }
 
 /// Pair a new Admin phone. The link is composed BEFORE the transaction so a failed

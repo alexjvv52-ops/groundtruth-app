@@ -271,7 +271,7 @@ fn render_html(listings: &[OfferView], as_of: &str, checkout_url: &str, title: &
         body:JSON.stringify({
           reference:reference,
           harvestDate:harvest,
-          currency:'cad',
+          currency:'usd',
           total:c.total,
           lines:c.lines
         })

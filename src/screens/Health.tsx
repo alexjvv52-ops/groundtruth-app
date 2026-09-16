@@ -205,7 +205,7 @@ export function Health({ onStatusesChange }: Props) {
               onClick={() =>
                 setHealthyOpen((m) => ({ ...m, [scope]: !m[scope] }))
               }
-              className="flex min-h-11 items-center gap-2 text-left text-sm text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              className="flex min-h-11 items-center gap-2 text-left text-sm text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:translate-y-px"
             >
               <span aria-hidden="true">{healthyShown ? "▾" : "▸"}</span>
               {healthy.length} healthy {healthy.length === 1 ? "check" : "checks"}
@@ -217,12 +217,58 @@ export function Health({ onStatusesChange }: Props) {
     );
   }
 
+  /**
+   * LIVELY HEALTH — the six loops as weight, beside the sentences, never instead.
+   * DESIGN-LOOPS.md §2 is the whole vocabulary: hollow 1.5, heavy 3, filled. The
+   * weight is the PC-shipped cards[i].weight (0 / 1 / 2 / null); this screen never
+   * derives one from a severity word. The extra r=22 ring marks worstClash.owner,
+   * the same hero the dock draws. No edges — clashes[] is not on DockFoldsView, so
+   * a line here would be invented. The picture is decorative: the two count
+   * sentences above carry the diagnosis, and this cannot say anything they do not.
+   */
+  function renderLoopRings() {
+    const cards = folds?.cards ?? [];
+    if (cards.length === 0) return null;
+    const owner = folds?.worstClash?.owner ?? null;
+    const step = 64;
+    return (
+      <svg
+        aria-hidden="true"
+        viewBox={`0 0 ${cards.length * step} 56`}
+        className="h-auto w-full"
+        fill="none"
+        stroke="currentColor"
+      >
+        {cards.map((c, i) => (
+          <g key={c.card}>
+            <circle
+              cx={step / 2 + i * step}
+              cy={28}
+              r={16}
+              fill={c.weight === 2 ? "currentColor" : "none"}
+              strokeWidth={c.weight === 1 ? 3 : 1.5}
+            />
+            {owner === c.card && (
+              <circle
+                cx={step / 2 + i * step}
+                cy={28}
+                r={22}
+                fill="none"
+                strokeWidth={1.5}
+              />
+            )}
+          </g>
+        ))}
+      </svg>
+    );
+  }
+
   const anyProblem = statuses.some((s) => s.severity !== "Healthy");
   const showDiagnosis = anyProblem || scan !== null;
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-6 py-8">
-      <h1 className="text-3xl font-semibold tracking-tight">Health</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Health</h1>
       <p className="text-sm text-muted-foreground">
         Status is computed when you look. Timestamps are raw so you can check the
         machine&apos;s claims by eye.
@@ -245,6 +291,7 @@ export function Health({ onStatusesChange }: Props) {
 
       {renderScope("farm")}
       {renderScope("system")}
+      {renderLoopRings()}
 
       <Card>
         <CardHeader>
@@ -257,7 +304,7 @@ export function Health({ onStatusesChange }: Props) {
           </p>
           <Button
             type="button"
-            className="h-12 text-base"
+            className="h-12 text-base active:translate-y-px"
             disabled={busy}
             onClick={() => void onScan()}
           >

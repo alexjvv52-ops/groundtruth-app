@@ -38,6 +38,7 @@ import {
   sampleGateLine,
   reputationCounts,
   resolveFollowup,
+  scanConfig,
   scanView,
   setGbpVerified,
   weeklyActions,
@@ -104,7 +105,7 @@ function formatCapacityLine(iso: string, origin: string): string {
 
 type Mode = "home" | "new-venue" | "drop-sample" | "log-touch";
 
-export function Marketing() {
+export function Marketing({ focus = null, onFocusHandled }: { focus?: "new-venue" | null; onFocusHandled?: () => void } = {}) {
   const [ttfso, setTtfso] = useState("No sample dropped yet.");
   const [followups, setFollowups] = useState<FollowupView[]>([]);
   const [venues, setVenues] = useState<VenueView[]>([]);
@@ -161,6 +162,7 @@ export function Marketing() {
   const [addVariety, setAddVariety] = useState<Record<string, string>>({});
   const [pendingStanding, setPendingStanding] = useState<string | null>(null);
   const [standingPull, setStandingPull] = useState<StandingPullView | null>(null);
+  const [scanEndpoint, setScanEndpoint] = useState<string | null>(null);
 
   async function reload() {
     // Settings fence 1 (S4): the scan endpoint URL + pull token editor left this
@@ -210,6 +212,11 @@ export function Marketing() {
           : "Capacity unknown — live farm database not readable",
       );
     }
+    try {
+      setScanEndpoint((await scanConfig()).endpointUrl);
+    } catch {
+      setScanEndpoint(null);
+    }
     if (!selectedVenueId && venueList.length > 0) {
       setSelectedVenueId(venueList[0].venueId);
     }
@@ -220,6 +227,13 @@ export function Marketing() {
       setError(e instanceof Error ? e.message : String(e)),
     );
   }, []);
+
+    // FIRST-15 — arriving from Today's "Add your first venue": open the form, then release the focus.
+    useEffect(() => {
+      if (focus !== "new-venue") return;
+      setMode("new-venue");
+      onFocusHandled?.();
+    }, [focus]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const today = todayLocal();
   const selectedVenue = venues.find((v) => v.venueId === selectedVenueId) ?? null;
@@ -597,6 +611,9 @@ export function Marketing() {
       : [],
   );
 
+    // FIRST-15 — no scan endpoint and nothing waiting: the card folds to one line after Pipeline.
+    const standingCollapsed = scanEndpoint === null && standingRequests.length === 0;
+
   function stageRows(stage: string): StageView[] {
     const inStage = stages.filter((s) => s.stage === stage);
     const unstaged = stage === "scouted" ? venuesWithoutStage : [];
@@ -712,7 +729,7 @@ export function Marketing() {
                         </label>
                         <button
                           type="button"
-                          className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                          className="text-sm text-muted-foreground underline-offset-4 hover:underline active:translate-y-px"
                           onClick={() => {
                             const current = { ...editorTargets(s) };
                             delete current[name];
@@ -755,7 +772,7 @@ export function Marketing() {
                       <Button
                         type="button"
                         variant="outline"
-                        className="h-9 px-3 text-sm"
+                        className="h-9 px-3 text-sm active:translate-y-px"
                         disabled={busy || !canSave}
                         onClick={() => void onSaveStandingTargets(s.venueId)}
                       >
@@ -765,7 +782,7 @@ export function Marketing() {
                         <Button
                           type="button"
                           variant="ghost"
-                          className="h-9 px-3 text-sm"
+                          className="h-9 px-3 text-sm active:translate-y-px"
                           disabled={busy}
                           onClick={() => {
                             setPendingStanding(null);
@@ -827,7 +844,7 @@ export function Marketing() {
                     <div className="flex gap-2">
                       <Button
                         type="button"
-                        className="h-11"
+                        className="h-11 active:translate-y-px"
                         disabled={busy}
                         onClick={() => {
                           void onChangeStage(
@@ -844,7 +861,7 @@ export function Marketing() {
                       <Button
                         type="button"
                         variant="ghost"
-                        className="h-11"
+                        className="h-11 active:translate-y-px"
                         disabled={busy}
                         onClick={() => setPendingStage(null)}
                       >
@@ -863,7 +880,7 @@ export function Marketing() {
             onClick={() =>
               setShowAllStages((prev) => ({ ...prev, [stage]: true }))
             }
-            className="self-start text-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="self-start text-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:translate-y-px"
           >
             Show the rest ({rows.length - STAGE_VISIBLE})
           </button>
@@ -874,7 +891,7 @@ export function Marketing() {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-6 py-8">
-      <h1 className="text-3xl font-semibold tracking-tight">Marketing</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Marketing</h1>
       {/* Marketing was the only tab without a page title, and the TtFSO sentence
           (marketing.rs:1837-1867, via MarketingSummary.timeToFirstStandingOrder)
           was the largest element on the page. The title and this line restore the
@@ -882,12 +899,13 @@ export function Marketing() {
           (Money.tsx:1172-1178). The blurb names this tab's job as the signed
           surface audit states it — "next relationship action (venue, sample,
           standing, review)" — and invents no next-action system: that redesign
-          is deferred. The TtFSO line's own class is deliberately unchanged. */}
+          is deferred. LIVELY MARKETING stepped the TtFSO line to the hero rung. */}
       <p className="text-sm text-muted-foreground">
         Venues, samples, standing orders and reviews — the relationship work behind
         the money.
       </p>
-      <p className="text-xl font-medium text-foreground">{ttfso}</p>
+      <p className="text-3xl font-medium tabular-nums text-foreground">{venues.length > 0 ? ttfso : "Add a venue, then drop a sample — the clock to your first standing order starts there."}</p>
+      {!standingCollapsed && (
       <Card>
         <CardHeader>
           <CardTitle>
@@ -907,7 +925,7 @@ export function Marketing() {
                   <div className="flex gap-2">
                     <Button
                       type="button"
-                      className="h-11 px-4"
+                      className="h-11 px-4 active:translate-y-px"
                       disabled={busy}
                       onClick={() => void onDecideRequest(item, "accepted")}
                     >
@@ -916,7 +934,7 @@ export function Marketing() {
                     <Button
                       type="button"
                       variant="ghost"
-                      className="h-11 px-4"
+                      className="h-11 px-4 active:translate-y-px"
                       disabled={busy}
                       onClick={() => void onDecideRequest(item, "dismissed")}
                     >
@@ -944,7 +962,7 @@ export function Marketing() {
           <Button
             type="button"
             variant="outline"
-            className="self-start"
+            className="self-start active:translate-y-px"
             disabled={busy}
             onClick={() => void onPullStandingRequests()}
           >
@@ -954,7 +972,7 @@ export function Marketing() {
             <Button
               type="button"
               variant="outline"
-              className="self-start text-sm"
+              className="self-start text-sm active:translate-y-px"
               disabled={busy}
               onClick={() => void onDevSeedRequest()}
             >
@@ -963,6 +981,7 @@ export function Marketing() {
           )}
         </CardContent>
       </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -1017,7 +1036,7 @@ export function Marketing() {
                     <button
                       type="button"
                       onClick={() => setShowAllFollowups(true)}
-                      className="px-2 py-3 text-left text-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                      className="px-2 py-3 text-left text-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:translate-y-px"
                     >
                       Show later follow-ups (
                       {sortedFollowups.length - FOLLOWUPS_VISIBLE})
@@ -1040,7 +1059,7 @@ export function Marketing() {
                       <Button
                         type="button"
                         variant="outline"
-                        className="self-start text-sm"
+                        className="self-start text-sm active:translate-y-px"
                         onClick={() => {
                           const url = lastDrop.qrLink;
                           if (url) void onCopyQrLink(url);
@@ -1058,6 +1077,28 @@ export function Marketing() {
                   )}
                 </div>
               )}
+              {venues.length === 0 ? (
+                <>
+                  <Button type="button" disabled={busy} onClick={() => setMode("new-venue")}>
+                    Add a venue
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => {
+                      setPackVarieties([]);
+                      setMode("drop-sample");
+                    }}
+                  >
+                    Log sample drop
+                  </Button>
+                  <Button type="button" variant="ghost" disabled={busy} onClick={() => setMode("log-touch")}>
+                    Log touch
+                  </Button>
+                </>
+              ) : (
+                <>
               <Button
                 type="button"
                 disabled={busy}
@@ -1084,6 +1125,8 @@ export function Marketing() {
               >
                 New venue
               </Button>
+                </>
+              )}
             </div>
           )}
 
@@ -1096,6 +1139,7 @@ export function Marketing() {
                   value={venueName}
                   onChange={(e) => setVenueName(e.target.value)}
                   placeholder="Venue name"
+                  autoFocus
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
@@ -1374,7 +1418,7 @@ export function Marketing() {
             <button
               type="button"
               onClick={() => setShowParked((v) => !v)}
-              className="self-start text-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              className="self-start text-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:translate-y-px"
             >
               {showParked
                 ? "Hide dormant & passed"
@@ -1392,6 +1436,11 @@ export function Marketing() {
           )}
         </CardContent>
       </Card>
+      {standingCollapsed && (
+        <p className="text-sm text-muted-foreground">
+          Standing requests arrive through a scan endpoint (Settings › Connections).
+        </p>
+      )}
 
       <Card>
         <CardHeader>
@@ -1445,14 +1494,14 @@ export function Marketing() {
         <CardContent className="flex flex-col gap-4">
           {reputation && (
             <ul className="flex flex-col gap-1 text-sm">
-              <li>Active warm venues: {reputation.activeWarmVenues}</li>
-              <li>Samples outstanding: {reputation.samplesOutstanding}</li>
-              <li>
+              <li className="border-b border-border pb-2">Active warm venues: {reputation.activeWarmVenues}</li>
+              <li className="border-b border-border pb-2">Samples outstanding: {reputation.samplesOutstanding}</li>
+              <li className="border-b border-border pb-2">
                 Standing orders: {reputation.standingOrders} (
                 {reputation.standingTraysWeek} trays/week)
               </li>
-              <li>Overdue follow-ups: {reputation.overdueFollowups}</li>
-              <li>
+              <li className="border-b border-border pb-2">Overdue follow-ups: {reputation.overdueFollowups}</li>
+              <li className="border-b border-border pb-2">
                 Google reviews:{" "}
                 {reputation.googleReviewCount == null
                   ? "none recorded"
@@ -1535,7 +1584,7 @@ export function Marketing() {
           {reviewRequests.length > 0 && (
             <ul className="flex flex-col gap-1 text-sm">
               {reviewRequests.map((r) => (
-                <li key={r.venueId}>
+                <li key={r.venueId} className="border-b border-border pb-2">
                   {r.venueName}: {r.outcome} on {r.decidedOn}
                 </li>
               ))}

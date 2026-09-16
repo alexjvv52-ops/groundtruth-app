@@ -4,6 +4,7 @@
 //! neither recomputes them.
 
 use crate::attention;
+use crate::field_devices;
 use crate::health::{CheckStatus, Severity, REPORTED_CHECKS};
 use crate::marketing;
 use crate::models::AttentionItem;
@@ -62,7 +63,12 @@ const UPCOMING_KINDS: &[&str] = &["snapshot.failed", "poll.failed"];
 const CARD_ORDER: &[&str] = &["money", "cover", "promise", "rack", "phone_queue", "system"];
 
 /// FI-1 — the port document's shape version. Bumped only by a signed fence.
-pub const PORT_DOCUMENT_VERSION: u32 = 9;
+pub const PORT_DOCUMENT_VERSION: u32 = 13;
+
+/// Job 5 (SEE-RACK B) - the hollow cells an EMPTY farm with no ceiling
+/// draws, mirroring Today.tsx:390 EMPTY_RACK_CELLS. A live farm with no
+/// ceiling draws none: the face never invents a ceiling.
+const EMPTY_RACK_CELLS: i64 = 6;
 
 /// FI-9 - carried by every packet, wherever it came from. Recorded in
 /// AI-READ-ONRAMP-BRAINSTORM.md; not invented here. The desk carries the same
@@ -135,6 +141,14 @@ pub struct ByScope {
 pub struct DockCard {
     pub card: String,
     pub severity: Option<Severity>,
+    /// RING-WEIGHT (WEIGHT-SRC A) — how heavily this loop's ring is drawn.
+    /// 0 hollow, 1 heavy, 2 filled. The PC decides; the phone paints a
+    /// stroke and compares nothing. A neutral number, not a severity word:
+    /// the served shell body may never spell one (g4).
+    ///
+    /// `None` where `severity` is None — the queue card (S5) invents no
+    /// weight any more than it invents a severity.
+    pub weight: Option<u8>,
     pub check_ids: Vec<String>,
     /// FI-4b (P-1) — the face sentence: the body half of the WORST check on
     /// this card, ties broken by `ids_for_card` order. Projected from a row
@@ -203,6 +217,14 @@ pub struct WorstClash {
     /// FI-5 - the ordered edge, owner first. `None` means this fact stays
     /// inside one loop and draws no line.
     pub cards: Option<Vec<String>>,
+    /// HERO-RING (OWNER A) - the loop the edge is owned BY, hoisted out of
+    /// `cards` so the phone reads a field instead of deciding an end. Same
+    /// value, one source: the first end of the signed edge above.
+    ///
+    /// `None` wherever `cards` is None. A fact whose consequence stays
+    /// inside one loop names no owner - guessing one would be a claim about
+    /// the farm that no check ever made.
+    pub owner: Option<String>,
 }
 
 pub fn scope_for_check(id: &str) -> &'static str {
@@ -477,6 +499,10 @@ fn cards_vec(pair: Option<(&'static str, &'static str)>) -> Option<Vec<String>> 
     pair.map(|(a, b)| vec![a.to_string(), b.to_string()])
 }
 
+fn owner_of(cards: &Option<Vec<String>>) -> Option<String> {
+    cards.as_ref().and_then(|c| c.first().cloned())
+}
+
 /// FI-5 / A'-1 - one builder, two projections. `worstClash` is the head of this
 /// list, so the pulse line and the clash set can never disagree.
 ///
@@ -491,6 +517,7 @@ fn clash_candidates(
     for item in items {
         let rank = today_rank(&item.kind);
         let cards = cards_vec(clash_cards("attention", &item.kind));
+        let owner = owner_of(&cards);
         candidates.push(WorstClash {
             source: "attention".into(),
             kind: item.kind,
@@ -498,6 +525,7 @@ fn clash_candidates(
             rank,
             sentence: Some(item.message),
             cards,
+            owner,
         });
     }
     // C1 (INT-001, D2). A failed standing-demand read is not "no shortfall".
@@ -505,6 +533,8 @@ fn clash_candidates(
     // the phone shows its stale banner instead of "Today's queue is clear."
     let demand = marketing::standing_demand(conn)?;
     if demand.shortfall > 0 {
+        let cards = cards_vec(clash_cards("standing_shortfall", ""));
+        let owner = owner_of(&cards);
         candidates.push(WorstClash {
             source: "standing_shortfall".into(),
             kind: String::new(),
@@ -514,11 +544,14 @@ fn clash_candidates(
                 "Standing orders are short {} this week.",
                 reachability::tray_word(demand.shortfall)
             )),
-            cards: cards_vec(clash_cards("standing_shortfall", "")),
+            cards,
+            owner,
         });
     }
     let view = trays::today_view(conn)?;
     if let Some(mtl) = &view.move_to_light {
+        let cards = cards_vec(clash_cards("move_due", ""));
+        let owner = owner_of(&cards);
         candidates.push(WorstClash {
             source: "move_due".into(),
             kind: String::new(),
@@ -528,7 +561,8 @@ fn clash_candidates(
                 "{} are due to move to light.",
                 reachability::tray_word(mtl.tray_count)
             )),
-            cards: cards_vec(clash_cards("move_due", "")),
+            cards,
+            owner,
         });
     }
     if let Some(hs) = &view.harvest_summary {
@@ -543,13 +577,16 @@ fn clash_candidates(
                 hs.variety_count
             ),
         };
+        let cards = cards_vec(clash_cards("harvest_due", ""));
+        let owner = owner_of(&cards);
         candidates.push(WorstClash {
             source: "harvest_due".into(),
             kind: String::new(),
             entity_id: None,
             rank: HARVEST_ROW_RANK,
             sentence: Some(sentence),
-            cards: cards_vec(clash_cards("harvest_due", "")),
+            cards,
+            owner,
         });
     }
     // Stable sort: equal ranks keep insertion order, so the head is exactly the
@@ -613,6 +650,17 @@ fn oldest_ran_at_before_serve(mine: &[&CheckStatus], served_at: &str) -> Option<
     best.map(|(_, s)| s)
 }
 
+/// RING-WEIGHT — the one place a severity becomes a ring weight. Kept
+/// here so the phone never holds the table.
+fn weight_for(severity: Option<Severity>) -> Option<u8> {
+    match severity {
+        Some(Severity::Healthy) => Some(0),
+        Some(Severity::Degraded) => Some(1),
+        Some(Severity::Unhealthy) => Some(2),
+        None => None,
+    }
+}
+
 fn cards_for(rows: &[CheckStatus], served_at: &str) -> Vec<DockCard> {
     CARD_ORDER
         .iter()
@@ -638,6 +686,7 @@ fn cards_for(rows: &[CheckStatus], served_at: &str) -> Vec<DockCard> {
             DockCard {
                 card: (*card).to_string(),
                 severity,
+                weight: weight_for(severity),
                 check_ids,
                 sentence,
                 oldest_ran_at,
@@ -802,6 +851,32 @@ pub fn checks_from_rows(rows: &[CheckStatus]) -> Vec<DockCheck> {
     checks_for(rows)
 }
 
+/// Job 5 (SEE-RACK B) - the desk's rack face, summed on the PC.
+///
+/// Today.tsx:398 rackFaceFor is the only other place these numbers are
+/// computed, and this is a copy of that rule, not a second opinion:
+/// `light` counts trays under the lights, `blackout` counts blackout plus
+/// the two states no production writer lands (sown, planned), `due` is the
+/// engine's own harvestSummary.trayCount, `ceiling` is Settings' shelf
+/// space and is `None` until BOTH slots are set, and `hollow` fills the
+/// rack to the ceiling after the live cells.
+///
+/// `caption` is the sentence the desk prints, composed here: the phone
+/// owns no plural and counts nothing (G-2, g4, g9). The third rack string,
+/// "ceiling not set", is constant operator text and lives in the shell
+/// beside EVAL_NEVER - the phone prints it when `ceiling` is null, the
+/// same absence-is-absence shape `lastPullAtDisplay` already uses.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DockRack {
+    pub light: i64,
+    pub blackout: i64,
+    pub due: i64,
+    pub ceiling: Option<i64>,
+    pub hollow: i64,
+    pub caption: String,
+}
+
 /// Port projection of `InstrumentSnapshot`. Fifteen fields at documentVersion 8.
 /// Frozen by e1.
 #[derive(Debug, Clone, Serialize)]
@@ -826,6 +901,18 @@ pub struct DockPortDocument {
     /// the token it already holds; the secret never travels on this wire and
     /// never enters `diagnosis`.
     pub capture_endpoint: Option<String>,
+    /// Job 4 (CAPTURE-QUERY A) - the `?c=<id>:<name>&c=…` suffix the capture
+    /// page needs before it can offer crops, composed by
+    /// `field_devices::crop_query` and nowhere else. Crop names only: never the
+    /// token, never the endpoint, never a path, and it never enters
+    /// `diagnosis`. `None` when the farm has no crops, the same absence-is-
+    /// absence shape `capture_endpoint` already uses.
+    pub capture_query: Option<String>,
+    /// Job 5 (SEE-RACK B) - the desk's rack face, summed on the PC. Six
+    /// keys the phone draws and never adjusts. `ceiling` is `None` until
+    /// both slots are set, the same absence-is-absence shape
+    /// `last_pull_at_display` already uses.
+    pub rack: DockRack,
     pub pull_health: phone_pull::PhonePullView,
     /// FI-10b - when the PC last checked the endpoint, PC-composed. It sits on
     /// the document and not inside `pull_health` because it is a different
@@ -965,6 +1052,58 @@ pub fn capture_endpoint(conn: &Connection) -> Result<Option<String>, String> {
         .filter(|u| !u.is_empty()))
 }
 
+/// Job 5 - the rack face, read once and summed here. Three existing
+/// readers, no new Tauri command, no new query, no clock.
+pub fn rack_face(conn: &Connection) -> Result<DockRack, String> {
+    let mut light = 0i64;
+    let mut blackout = 0i64;
+    for t in trays::list_trays(conn)? {
+        if t.state == "light" {
+            light += t.quantity;
+        } else if t.state == "blackout" || t.state == "sown" || t.state == "planned" {
+            blackout += t.quantity;
+        }
+    }
+    let live = light + blackout;
+    let cap = trays::shelf_capacity(conn)?;
+    let ceiling = match (cap.light_slots, cap.blackout_slots) {
+        (Some(l), Some(b)) => Some(l + b),
+        _ => None,
+    };
+    // CEILING: unknown N never invents a number - an empty farm shows the
+    // six hollow cells and a live farm shows none. Known N fills to N, and
+    // live > N clips nothing: every live cell still paints.
+    let hollow = match ceiling {
+        None => {
+            if live == 0 {
+                EMPTY_RACK_CELLS
+            } else {
+                0
+            }
+        }
+        Some(n) => (n - live).max(0),
+    };
+    let due = trays::today_view(conn)?
+        .harvest_summary
+        .map(|h| h.tray_count)
+        .unwrap_or(0);
+    // The desk's two sentences, byte for byte: tray_word is the same
+    // singular/plural rule as Today.tsx:70 trayCountLabel.
+    let caption = if live == 0 {
+        "Nothing on the rack".to_string()
+    } else {
+        format!("{} on the rack", reachability::tray_word(live))
+    };
+    Ok(DockRack {
+        light,
+        blackout,
+        due,
+        ceiling,
+        hollow,
+        caption,
+    })
+}
+
 pub fn port_document(
     conn: &Connection,
     farm_dir: &Path,
@@ -976,6 +1115,9 @@ pub fn port_document(
     let clashes = clashes_read_only(conn)?;
     let phone_queue = phone_queue_facts(conn)?;
     let capture = capture_endpoint(conn)?;
+    let capture_query = field_devices::crop_query(conn)?;
+    let capture_query = Some(capture_query).filter(|q| !q.is_empty());
+    let rack = rack_face(conn)?;
     let pull_health = phone_pull::latest_view(conn)?;
     let diagnosis = diagnosis_text(&snap, &clashes, &phone_queue, &pull_health)?;
     // Composed after the packet and deliberately not passed to it: F10b-1(b-i)
@@ -999,6 +1141,8 @@ pub fn port_document(
         phone_queue,
         diagnosis,
         capture_endpoint: capture,
+        capture_query,
+        rack,
         pull_health,
         last_pull_at_display,
         served_at: snap.served_at,

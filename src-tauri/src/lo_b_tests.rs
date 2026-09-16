@@ -89,7 +89,7 @@ fn paid_session(reference: &str, amount_cents: i64, session_id: &str) -> PaidSes
         session_id: session_id.to_string(),
         payment_intent: Some(format!("pi_{session_id}")),
         lines: Vec::new(),
-        currency: "cad".to_string(),
+        currency: "usd".to_string(),
         customer_email: None,
         paid_at: projection::handler_now(),
         created: 1,
@@ -429,7 +429,7 @@ fn lo_b_payloads_are_sealed_at_the_choke_point() {
         payment_link_url: "https://example.test/x".into(),
         client_reference: format!("lo-{}", listing.listing_id),
         priced_total_cents: 700,
-        currency: "cad".into(),
+        currency: "usd".into(),
         minted_on: today(),
     };
     let mut extra = serde_json::to_value(&good).unwrap();

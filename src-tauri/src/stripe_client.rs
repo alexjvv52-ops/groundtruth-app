@@ -219,7 +219,7 @@ impl<H: StripeHttp> StripeGateway for StripeClient<H> {
             &[
                 ("product", product_id.as_str()),
                 ("unit_amount", unit.as_str()),
-                ("currency", "cad"),
+                ("currency", "usd"),
                 ("metadata[harvest_date]", &offer.harvest_date),
                 ("metadata[crop_id]", &offer.crop_id),
                 ("metadata[offer_id]", &offer.id),
@@ -337,7 +337,7 @@ impl<H: StripeHttp> StripeGateway for StripeClient<H> {
             &[
                 ("product", product_id.as_str()),
                 ("unit_amount", unit.as_str()),
-                ("currency", "cad"),
+                ("currency", "usd"),
                 (meta_key, bill.order_id.as_str()),
             ],
             &format!("{idem}-price-{}", bill.order_id),
@@ -573,7 +573,7 @@ fn unparsed_from_raw(raw: &Value, reason: String) -> UnparsedSession {
     let currency = raw
         .get("currency")
         .and_then(|v| v.as_str())
-        .unwrap_or("cad")
+        .unwrap_or("usd")
         .to_string();
     UnparsedSession {
         session_id,
@@ -632,7 +632,7 @@ fn build_paid_session(raw: &Value, line_items: &[Value]) -> Result<PaidSession, 
     let currency = raw
         .get("currency")
         .and_then(|v| v.as_str())
-        .unwrap_or("cad")
+        .unwrap_or("usd")
         .to_string();
     let payment_intent = match raw.get("payment_intent") {
         Some(Value::String(s)) => Some(s.clone()),

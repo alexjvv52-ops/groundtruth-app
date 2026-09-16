@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 /// e1 and h1 both assert against it. They were two independent literals and
 /// drifted at FI-1 and again at FI-5; now a fence that changes the document
 /// changes this line and there is nothing else to find.
-const PORT_DOC_KEYS: usize = 16;
+const PORT_DOC_KEYS: usize = 18;
 
 fn configure(conn: &Connection) {
     scans::set_config(
@@ -141,6 +141,12 @@ fn t1_bound_address_is_loopback_and_port_nonzero() {
     let view = dock_port::status();
     assert!(view.running);
     assert_eq!(view.port, Some(port));
+    assert_eq!(view.reach_url.is_some(), view.reach_qr.is_some());
+    if let Some(qr) = &view.reach_qr {
+        assert!(!qr.is_empty());
+        let n = qr.len();
+        assert!(qr.iter().all(|row| row.len() == n));
+    }
     let _ = dock_port::stop();
 }
 
@@ -488,6 +494,8 @@ fn e1_folds_document_has_exactly_the_signed_keys() {
     assert!(obj.contains_key("phoneQueue"));
     assert!(obj.contains_key("diagnosis"));
     assert!(obj.contains_key("captureEndpoint"));
+    assert!(obj.contains_key("captureQuery"));
+    assert!(obj.contains_key("rack"));
     assert!(obj.contains_key("pullHealth"));
     assert!(obj.contains_key("lastPullAtDisplay"));
     assert!(obj.contains_key("servedAt"));
@@ -498,8 +506,8 @@ fn e1_folds_document_has_exactly_the_signed_keys() {
     assert!(!obj.contains_key("ranks"));
     assert!(!obj.contains_key("todayAttentionOrder"));
     assert_eq!(
-        obj["documentVersion"], 9,
-        "FI-10b put the pull's own age on the wire"
+        obj["documentVersion"], 13,
+        "HERO-RING put the clash owner on the wire"
     );
     let _ = dock_port::stop();
 }
@@ -1113,12 +1121,13 @@ fn f4d_card_rows_carry_the_signed_key_set() {
         let o = c.as_object().expect("card object");
         assert_eq!(
             o.len(),
-            6,
-            "card severity checkIds sentence oldestRanAt oldestRanAtDisplay"
+            7,
+            "card severity weight checkIds sentence oldestRanAt oldestRanAtDisplay"
         );
         for key in [
             "card",
             "severity",
+            "weight",
             "checkIds",
             "sentence",
             "oldestRanAt",
@@ -1132,6 +1141,7 @@ fn f4d_card_rows_carry_the_signed_key_set() {
         .find(|c| c["card"] == "phone_queue")
         .expect("phone_queue card");
     assert!(queue["severity"].is_null(), "S5 - no invented severity");
+    assert!(queue["weight"].is_null(), "S5 - no invented weight");
     assert!(
         queue["sentence"].is_null(),
         "Q-1b - the queue face reads phoneQueue.sentence, not a second copy"
@@ -1412,7 +1422,7 @@ fn f6h_schematic_shares_one_paint_and_composes_nothing() {
         2,
         "definition + the single call inside showEdges"
     );
-    assert!(shell.contains("drawSchematic(pairs, worst);"));
+    assert!(shell.contains("drawSchematic(pairs, worst, doc.cards || [], hero);"));
     assert!(
         shell.contains("label.textContent = titleFor(RING[j]);"),
         "node labels are FI-4 titles, never wire keys"
@@ -1435,6 +1445,129 @@ fn f6h_schematic_shares_one_paint_and_composes_nothing() {
         shell.contains("document.getElementById(\"schematic\").textContent = \"\";"),
         "clearNumbers must wipe the picture, or it outlives the numbers"
     );
+}
+
+/// RING-WEIGHT (WEIGHT-SRC A) - the ring's weight is a PC number, painted.
+///
+/// The phone looks the card up by key because RING order is adjacency and
+/// CARD_ORDER is not, reads `weight` and nothing else off it, and falls to the
+/// hollow ring on null. No severity word reaches the body: the weight is the
+/// whole point of shipping a number instead of a word.
+#[test]
+fn f6j_ring_weight_is_a_pc_number_the_phone_only_paints() {
+    let shell = crate::dock_shell::SHELL;
+    assert!(shell.contains("function drawSchematic(pairs, worst, cards, hero) {"));
+    assert!(
+        shell.contains("if (cards[k] && cards[k].card === RING[j]) {"),
+        "the card is found by key - RING order is not CARD_ORDER"
+    );
+    assert!(shell.contains("w = cards[k].weight;"));
+    assert!(
+        shell.contains("ring.setAttribute(\"fill\", w === 2 ? \"currentColor\" : \"none\");"),
+        "weight 2 fills the disc"
+    );
+    assert!(
+        shell.contains("ring.setAttribute(\"stroke-width\", w === 1 ? \"3\" : \"1.5\");"),
+        "weight 1 is the heavy stroke a lead edge already uses; null stays hollow"
+    );
+    assert!(
+        shell.contains("label.setAttribute(\"font-size\", \"15\");"),
+        "the schematic labels clear the phone's floor"
+    );
+    assert!(
+        !shell.contains("row.severity === doc.overall"),
+        "the phone must not compare two wire words to weight a ring"
+    );
+    assert!(!shell.contains("transition"), "G'-6a - static emphasis");
+    assert!(shell.is_ascii());
+    for word in ["Unhealthy", "Degraded", "Healthy"] {
+        assert!(!shell.contains(word), "g4 owns that ban");
+    }
+}
+
+/// HERO-RING (OWNER A) - the owner is a PC field and the extra ring is
+/// the phone painting it.
+///
+/// The owner is the first end of the signed edge, so a clash with no
+/// edge ships `owner: null` and draws no hero ring at all - rack work
+/// on this farm gets the sentence and no bullseye. The phone compares
+/// the owner against RING keys, so an unknown owner paints nothing.
+#[test]
+fn f6k_hero_ring_is_a_pc_owner_the_phone_only_paints() {
+    let _suite = lock_suite();
+    let (db, token) = paired_db();
+    let port = start_clean(db);
+    let (status, _, body) = get(port, "/folds", Some(&token));
+    assert_eq!(status, 200);
+    let parsed: serde_json::Value = serde_json::from_slice(&body).expect("folds JSON");
+    for c in parsed["clashes"].as_array().expect("clashes array") {
+        let obj = c.as_object().expect("clash object");
+        assert!(
+            obj.contains_key("owner"),
+            "every clash row carries an owner"
+        );
+        match obj["cards"].as_array() {
+            Some(cards) => assert_eq!(
+                obj["owner"], cards[0],
+                "the owner is the edge's first end, not a second table"
+            ),
+            None => assert!(
+                obj["owner"].is_null(),
+                "a clash with no edge names no owner"
+            ),
+        }
+    }
+    let shell = crate::dock_shell::SHELL;
+    assert!(shell.contains("function drawSchematic(pairs, worst, cards, hero) {"));
+    assert!(shell.contains("var hero = (doc.worstClash && doc.worstClash.owner) || \"\";"));
+    assert!(
+        shell.contains("if (RING[j] === hero) {"),
+        "the extra ring is drawn for a known node or not at all"
+    );
+    assert!(shell.contains("heroRing.setAttribute(\"r\", \"22\");"));
+    assert!(shell.contains("heroRing.setAttribute(\"fill\", \"none\");"));
+    assert!(shell.contains("heroRing.setAttribute(\"stroke-width\", \"1.5\");"));
+    assert!(!shell.contains("transition"), "G'-6a - static emphasis");
+    assert!(shell.is_ascii());
+    for word in ["Unhealthy", "Degraded", "Healthy"] {
+        assert!(!shell.contains(word), "g4 owns that ban");
+    }
+    let _ = dock_port::stop();
+}
+
+/// FI-6 (EMPTY-TWO) - two empty edge lists are two different farms.
+///
+/// `drawn === 0` was reached two ways and printed one sentence. A wire with no
+/// clashes means nothing is pulling. A wire full of clashes where no row names
+/// two cards means the work is real and sits inside one loop - and the shell
+/// used to call that "nothing". The second constant is the whole fix: both are
+/// signed operator text, the branch reads only `list.length`, and no wire value
+/// reaches either line.
+#[test]
+fn f6i_the_empty_edge_list_says_which_empty_it_is() {
+    let shell = crate::dock_shell::SHELL;
+    assert!(
+        shell.contains("var EDGES_NONE = \"Nothing is pulling against anything right now.\";"),
+        "the original empty state keeps its bytes"
+    );
+    assert!(
+        shell.contains(
+            "var EDGES_INSIDE = \"Work is due inside one loop. No loop is pulling on another.\";"
+        ),
+        "EMPTY-TWO: the one signed string"
+    );
+    assert!(
+        shell.contains("none.textContent = list.length === 0 ? EDGES_NONE : EDGES_INSIDE;"),
+        "the branch is on the clash count, not on a farm number"
+    );
+    assert!(
+        shell.contains("drawSchematic(pairs, worst, doc.cards || [], hero);"),
+        "the picture is still drawn from the same call"
+    );
+    assert!(shell.is_ascii());
+    for word in ["Unhealthy", "Degraded", "Healthy"] {
+        assert!(!shell.contains(word), "g4 owns that ban");
+    }
 }
 
 /// FI-7 - the signed heading, and no severity word smuggled in with it.
@@ -1889,6 +2022,35 @@ fn f10c_diagnosis_never_carries_the_endpoint_or_the_token() {
     let _ = dock_port::stop();
 }
 
+/// Job 4 - the crop query is a query and nothing else. It is what the
+/// capture page needs; it must never become a second way for the token or
+/// the pairing path to reach the wire.
+#[test]
+fn f10h_capture_query_is_a_query_with_no_token_and_no_path() {
+    let _suite = lock_suite();
+    let (db, token) = paired_db();
+    let port = start_clean(db);
+    let (status, _, body) = get(port, "/folds", Some(&token));
+    assert_eq!(status, 200);
+    let parsed: serde_json::Value = serde_json::from_slice(&body).expect("folds JSON");
+    let v = &parsed["captureQuery"];
+    assert!(v.is_string() || v.is_null(), "a query or nothing");
+    if let Some(q) = v.as_str() {
+        assert!(!q.is_empty(), "absence is null, never an empty string");
+        assert!(q.starts_with("?c="), "crop names only, from the first byte");
+        assert!(!q.contains("/a/"), "that is the pairing path, not a query");
+        assert!(!q.contains(&token), "the token must never reach the wire");
+    }
+    let d = parsed["diagnosis"].as_str().expect("diagnosis");
+    if let Some(q) = v.as_str() {
+        assert!(
+            !d.contains(q),
+            "the crop query must not travel in the export block"
+        );
+    }
+    let _ = dock_port::stop();
+}
+
 /// FI-10 - the phone assembles the URL from what it already holds, on the one
 /// paint path, and nothing else builds it.
 #[test]
@@ -2100,6 +2262,62 @@ fn f11e_diagnosis_carries_the_pull_section() {
         "diagnosis must carry the pull message"
     );
     assert!(text.is_ascii() || !text.is_empty());
+}
+
+/// Job 5 (SEE-RACK B) - the rack on the wire. Six PC keys, a caption the
+/// desk would print, and no token anywhere near it. f12b holds the PC
+/// side of the sum.
+#[test]
+fn f12_rack_is_six_pc_keys_with_a_signed_caption_and_no_token() {
+    let _suite = lock_suite();
+    let (db, token) = paired_db();
+    let port = start_clean(Arc::clone(&db));
+    let (status, _, body) = get(port, "/folds", Some(&token));
+    assert_eq!(status, 200);
+    let parsed: serde_json::Value = serde_json::from_slice(&body).expect("folds JSON");
+    let obj = parsed.as_object().expect("object");
+    assert_eq!(obj.len(), PORT_DOC_KEYS);
+    let rack = obj["rack"].as_object().expect("rack object");
+    assert_eq!(rack.len(), 6);
+    assert!(rack.contains_key("light"));
+    assert!(rack.contains_key("blackout"));
+    assert!(rack.contains_key("due"));
+    assert!(rack.contains_key("ceiling"));
+    assert!(rack.contains_key("hollow"));
+    assert!(rack.contains_key("caption"));
+    assert!(obj["rack"]["light"].is_i64());
+    assert!(obj["rack"]["blackout"].is_i64());
+    assert!(obj["rack"]["due"].is_i64());
+    assert!(obj["rack"]["hollow"].is_i64());
+    assert!(obj["rack"]["ceiling"].is_null() || obj["rack"]["ceiling"].is_i64());
+    let caption = obj["rack"]["caption"].as_str().expect("caption");
+    assert!(
+        caption == "Nothing on the rack" || caption.ends_with(" on the rack"),
+        "{caption}"
+    );
+    assert!(!caption.contains("ceiling"), "{caption}");
+    let whole = serde_json::to_string(&obj["rack"]).unwrap();
+    assert!(!whole.contains(&token), "no token on the rack");
+    // f11c reads the served shell off disk; this reads the body the door
+    // actually serves, same strings, no token.
+    let (status, _, shell_body) = get(port, "/", None);
+    assert_eq!(status, 200);
+    let shell = String::from_utf8_lossy(&shell_body);
+    assert_eq!(shell.matches("ceiling not set").count(), 1);
+    assert!(
+        shell.contains("RACK_NO_CEILING"),
+        "the only place that string is printed from"
+    );
+    assert_eq!(
+        shell.matches("RACK_NO_CEILING").count(),
+        2,
+        "one constant, one print site"
+    );
+    assert!(!shell.contains("Math.max"));
+    assert!(!shell.contains("Math.min"));
+    assert!(shell.is_ascii(), "shell stays ASCII");
+    assert_eq!(shell.matches("<button").count(), 3);
+    let _ = dock_port::stop();
 }
 
 /// DESK-LABEL-1 - the desk can never print a raw action key.

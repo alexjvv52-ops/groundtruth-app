@@ -212,8 +212,8 @@ export function Books() {
       type="button"
       className={
         mode === id
-          ? "text-sm text-muted-foreground underline underline-offset-4"
-          : "text-sm text-muted-foreground"
+          ? "min-h-11 text-sm text-muted-foreground underline underline-offset-4 active:translate-y-px"
+          : "min-h-11 text-sm text-muted-foreground active:translate-y-px"
       }
       onClick={() => setMode(id)}
     >
@@ -238,7 +238,7 @@ export function Books() {
         : `${owed.deliveries} ${owed.deliveries === 1 ? "delivery" : "deliveries"}, value partly unpriced`;
 
   return (
-    <main className="flex flex-col gap-4 px-6 py-6">
+    <main className="mx-auto flex w-full max-w-md flex-col gap-4 px-6 py-6">
       <div className="flex flex-wrap gap-x-3 gap-y-1">
         {periodBtn("week", "This week")}
         {periodBtn("month", "This month")}
@@ -277,7 +277,7 @@ export function Books() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {cash != null && (
-            <p className="text-2xl font-medium">
+            <p className="text-3xl font-medium tabular-nums">
               {formatCents(cash.totalCents)}
             </p>
           )}
@@ -288,7 +288,7 @@ export function Books() {
           </p>
           <button
             type="button"
-            className="text-sm text-muted-foreground"
+            className="text-sm text-muted-foreground active:translate-y-px"
             onClick={() => setShowCash((v) => !v)}
           >
             Show the rows
@@ -316,7 +316,7 @@ export function Books() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {owedFigure != null && (
-            <p className="text-2xl font-medium">{owedFigure}</p>
+            <p className="text-3xl font-medium tabular-nums">{owedFigure}</p>
           )}
           <p className="text-sm text-muted-foreground">
             Delivered orders that have not been paid, as of right now. Not filtered by
@@ -324,7 +324,7 @@ export function Books() {
           </p>
           <button
             type="button"
-            className="text-sm text-muted-foreground"
+            className="text-sm text-muted-foreground active:translate-y-px"
             onClick={() => setShowOwed((v) => !v)}
           >
             Show the rows
@@ -355,7 +355,7 @@ export function Books() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {summary != null && (
-            <p className="text-2xl font-medium">
+            <p className="text-3xl font-medium tabular-nums">
               {formatCents(summary.totalShortfallCents)}
             </p>
           )}
@@ -365,7 +365,7 @@ export function Books() {
           </p>
           <button
             type="button"
-            className="text-sm text-muted-foreground"
+            className="text-sm text-muted-foreground active:translate-y-px"
             onClick={() => setShowWriteOffs((v) => !v)}
           >
             Show the rows
@@ -390,7 +390,7 @@ export function Books() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {exposure != null && (
-            <p className="text-2xl font-medium">{exposure.count}</p>
+            <p className="text-3xl font-medium tabular-nums">{exposure.count}</p>
           )}
           <p className="text-sm text-muted-foreground">
             Open orders with at least one line that has no price. There is no total for
@@ -398,7 +398,7 @@ export function Books() {
           </p>
           <button
             type="button"
-            className="text-sm text-muted-foreground"
+            className="text-sm text-muted-foreground active:translate-y-px"
             onClick={() => setShowUnpriced((v) => !v)}
           >
             Show the rows
@@ -423,7 +423,7 @@ export function Books() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {out != null && (
-            <p className="text-2xl font-medium">
+            <p className="text-3xl font-medium tabular-nums">
               {formatCents(out.totalCents)}
             </p>
           )}
@@ -432,7 +432,7 @@ export function Books() {
           </p>
           <button
             type="button"
-            className="text-sm text-muted-foreground"
+            className="text-sm text-muted-foreground active:translate-y-px"
             onClick={() => setShowOut((v) => !v)}
           >
             Show the rows
@@ -457,7 +457,7 @@ export function Books() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {net != null && (
-            <p className="text-2xl font-medium">
+            <p className="text-3xl font-medium tabular-nums">
               {formatCents(net.netCents)}
             </p>
           )}
@@ -467,7 +467,7 @@ export function Books() {
           </p>
           <button
             type="button"
-            className="text-sm text-muted-foreground"
+            className="text-sm text-muted-foreground active:translate-y-px"
             onClick={() => setShowNet((v) => !v)}
           >
             Show the rows
@@ -491,7 +491,7 @@ export function Books() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {badDebt != null && (
-            <p className="text-2xl font-medium">
+            <p className="text-3xl font-medium tabular-nums">
               {formatCents(badDebt.totalCents)}
             </p>
           )}
@@ -501,7 +501,7 @@ export function Books() {
           </p>
           <button
             type="button"
-            className="text-sm text-muted-foreground"
+            className="text-sm text-muted-foreground active:translate-y-px"
             onClick={() => setShowBadDebt((v) => !v)}
           >
             Show the rows
@@ -531,7 +531,7 @@ export function Books() {
           </p>
           <button
             type="button"
-            className="text-sm text-muted-foreground"
+            className="text-sm text-muted-foreground active:translate-y-px"
             onClick={() => setShowCategory((v) => !v)}
           >
             Show the rows
@@ -558,7 +558,7 @@ export function Books() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {corrections != null && (
-            <p className="text-2xl font-medium">{corrections.count}</p>
+            <p className="text-3xl font-medium tabular-nums">{corrections.count}</p>
           )}
           <p className="text-sm text-muted-foreground">
             Income that was voided or corrected in this period. The original cash
@@ -566,7 +566,7 @@ export function Books() {
           </p>
           <button
             type="button"
-            className="text-sm text-muted-foreground"
+            className="text-sm text-muted-foreground active:translate-y-px"
             onClick={() => setShowCorrections((v) => !v)}
           >
             Show the rows

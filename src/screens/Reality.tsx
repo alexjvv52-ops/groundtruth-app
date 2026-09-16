@@ -77,7 +77,7 @@ function jarLine(row: SeedOnHandRow): string {
   return `${row.cropName} · ${row.onHandOz.toFixed(1)} oz on hand · ${inOut}`;
 }
 const actionCardClass =
-  "flex min-h-24 cursor-pointer items-center justify-center p-8 text-center text-xl font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
+  "flex min-h-24 cursor-pointer items-center justify-center p-8 text-center text-xl font-medium transition-colors active:translate-y-px hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
 const confirmCardClass =
   "flex min-h-24 items-center justify-between gap-4 p-8 text-xl font-medium";
 type LastAction =
@@ -339,11 +339,22 @@ export function Reality({ pollTick = 0 }: { pollTick?: number }) {
     view.nextEvents[0].kind === "light";
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-8 px-6 py-12">
-      <h1 className="text-3xl font-semibold tracking-tight">Farm</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Farm</h1>
       <ErrorLine message={lastError} />
+      {/* STATES A - the loading face: the count, the instrument lines and the sow
+          card as blocks of var(--border) in the flow they will take. Gated on
+          `loading` alone: a failed probe leaves view null with loading false, and
+          gating on view too would hold this skeleton forever on an unreadable farm. */}
+      {loading && (
+        <div className="flex flex-col gap-8" aria-hidden="true">
+          <div className="skeleton-block h-9 w-2/3" />
+          <div className="skeleton-block h-16" />
+          <div className="skeleton-block h-24" />
+        </div>
+      )}
       {!loading && view && (
         <>
-          <p className="text-base font-medium">
+          <p className="text-3xl font-medium tabular-nums">
             {view.activeTrayCount === 0
               ? "Nothing growing right now."
               : `${trayCountLabel(view.activeTrayCount)} growing.`}
@@ -421,14 +432,14 @@ export function Reality({ pollTick = 0 }: { pollTick?: number }) {
           ) : view.nextEvents.length === 0 ? (
             <p className="text-xl font-medium">Nothing growing right now.</p>
           ) : (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col">
               {nextLightEvents.length >= 2 ? (
                 <>
                   <button
                     type="button"
                     aria-expanded={nextLightOpen}
                     onClick={() => setNextLightOpen((v) => !v)}
-                    className="flex min-h-11 items-center gap-2 text-left text-xl font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    className="flex min-h-11 items-center gap-2 border-t border-border py-2 text-left text-xl font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   >
                     <span aria-hidden="true">{nextLightOpen ? "▾" : "▸"}</span>
                     Move to light ({trayCountLabel(nextLightTrayTotal)})
@@ -437,7 +448,7 @@ export function Reality({ pollTick = 0 }: { pollTick?: number }) {
                     nextLightEvents.map((ne) => (
                       <p
                         key={`light-${ne.date}-${ne.cropName}`}
-                        className="pl-6 text-xl font-medium"
+                        className="border-t border-border py-2 pl-6 text-xl font-medium"
                       >
                         {`Next: move ${trayCountLabel(ne.trayCount)} of ${ne.cropName} to light on ${estWeekday(ne.date)}.`}
                       </p>
@@ -447,7 +458,7 @@ export function Reality({ pollTick = 0 }: { pollTick?: number }) {
                 nextLightEvents.map((ne) => (
                   <p
                     key={`light-${ne.date}-${ne.cropName}`}
-                    className="text-xl font-medium"
+                    className="border-t border-border py-2 text-xl font-medium"
                   >
                     {`Next: move ${trayCountLabel(ne.trayCount)} of ${ne.cropName} to light on ${estWeekday(ne.date)}.`}
                   </p>
@@ -456,7 +467,7 @@ export function Reality({ pollTick = 0 }: { pollTick?: number }) {
               {nextHarvestEvents.map((ne) => (
                 <p
                   key={`harvest-${ne.date}-${ne.cropName}`}
-                  className="text-xl font-medium"
+                  className="border-t border-border py-2 text-xl font-medium"
                 >
                   {`Next: harvest ${trayCountLabel(ne.trayCount)} of ${ne.cropName} on ${estWeekday(ne.date)}.`}
                 </p>

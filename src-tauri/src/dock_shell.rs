@@ -18,39 +18,45 @@ pub const SHELL: &str = r##"<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dock</title>
 <style>
-body { font-family: sans-serif; margin: 1.25rem; line-height: 1.4; }
-#line { margin: 0 0 0.75rem; }
-#evaluated { margin: 0 0 0.75rem; font-size: 0.9375rem; }
+html { color-scheme: light; }
+body { box-sizing: border-box; max-width: 28rem; margin: 0 auto; padding: 1.25rem 1rem 3rem; font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; font-size: 1.0625rem; line-height: 1.45; }
+#line { margin: 0 0 0.25rem; font-size: 0.9375rem; }
+#evaluated { margin: 0 0 1.25rem; font-size: 0.9375rem; }
 #evaluated:empty { display: none; }
-#overall { margin: 0 0 0.5rem; font-size: 2.25rem; font-weight: 700; line-height: 1.1; }
-#clash { margin: 0 0 1.25rem; padding-left: 0.75rem; border-left: 4px solid currentColor; font-size: 1.125rem; }
+#overall { margin: 0 0 0.5rem; font-size: 2.25rem; font-weight: 700; line-height: 1.2; }
+#clash { margin: 0 0 1.5rem; padding-left: 0.75rem; border-left: 4px solid currentColor; font-size: 1.5rem; font-weight: 600; line-height: 1.25; }
 #overall:empty, #clash:empty { display: none; }
-.row { display: flex; justify-content: space-between; gap: 1rem; margin: 0; padding: 0.6rem 0; border-top: 1px solid #ccc; font-size: 1.125rem; }
+.row { display: flex; justify-content: space-between; gap: 1rem; margin: 0; padding: 0.75rem 0 0.2rem; border-top: 1px solid #ccc; font-size: 1rem; }
 .sev { font-weight: 600; }
-.cface { margin: 0.1rem 0 0; font-size: 1rem; }
-.cage { margin: 0.1rem 0 0.35rem; font-size: 0.875rem; }
-#edgesHead { margin: 1.5rem 0 0.5rem; font-size: 1rem; font-weight: 600; }
-#edgesHead:empty { display: none; }
-.edge { margin: 0; padding: 0.35rem 0 0.35rem 0.75rem; border-left: 4px solid transparent; font-size: 1.0625rem; }
-.edge.worst { border-left-color: currentColor; font-weight: 600; }
-#schematic { margin: 0 0 0.75rem; }
+.cface { margin: 0.1rem 0 0; font-size: 1.0625rem; }
+.cage { margin: 0.1rem 0 0.6rem; font-size: 0.875rem; }
+.rack { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0.35rem 0 0; }
+.rcell { box-sizing: border-box; width: 0.8rem; height: 0.8rem; border: 1px solid #ccc; }
+.rcell.lit { border-color: currentColor; background: currentColor; }
+.rcell.dark { border-color: currentColor; background: currentColor; opacity: 0.55; }
+.rcap { margin: 0.35rem 0 0; font-size: 1rem; }
+.rceil { margin: 0.1rem 0 0; font-size: 0.875rem; }
+#tasksHead, #edgesHead, #queueHead, #pullHead { margin: 2rem 0 0.5rem; font-size: 0.9375rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+#tasksHead:empty, #edgesHead:empty, #queueHead:empty, #pullHead:empty { display: none; }
+.task { margin: 0; padding: 0.4rem 0 0.4rem 0.75rem; border-left: 4px solid #ccc; font-size: 1.0625rem; }
+#tasks .task:nth-child(2) { border-left-color: currentColor; padding-top: 0.5rem; padding-bottom: 0.5rem; font-size: 1.25rem; font-weight: 600; }
+#schematic { margin: 0 0 1rem; }
 #schematic:empty { display: none; }
 #schematic svg { display: block; width: 100%; height: auto; max-width: 26rem; }
-#queueHead { margin: 1.5rem 0 0.5rem; font-size: 1rem; font-weight: 600; }
-#queueHead:empty { display: none; }
-.qcount { margin: 0 0 0.35rem; font-size: 1.0625rem; }
-.qrow { margin: 0; padding: 0.35rem 0 0.35rem 0.75rem; border-left: 4px solid #ccc; font-size: 1rem; }
-#pullHead{font-size:15px;margin:14px 0 4px 0;}
-.pline{font-size:15px;margin:2px 0;}
-#tasksHead { margin: 1.5rem 0 0.5rem; font-size: 1rem; font-weight: 600; }
-#tasksHead:empty { display: none; }
-.task { margin: 0; padding: 0.35rem 0 0.35rem 0.75rem; border-left: 4px solid #ccc; font-size: 1.0625rem; }
-#pull { margin-top: 1.25rem; padding: 0.5rem 1rem; font-size: 1rem; }
-#capture { display: inline-block; margin-top: 1.25rem; margin-left: 0.75rem; padding: 0.5rem 1rem; font-size: 1rem; }
+.edge { margin: 0; padding: 0.4rem 0 0.4rem 0.75rem; border-left: 4px solid transparent; font-size: 1.0625rem; }
+.edge.worst { border-left-color: currentColor; font-weight: 600; }
+.qcount { margin: 0 0 0.4rem; font-size: 1.0625rem; }
+.qrow { margin: 0; padding: 0.4rem 0 0.4rem 0.75rem; border-left: 4px solid #ccc; font-size: 1rem; }
+.pline { margin: 0.2rem 0; font-size: 0.9375rem; }
+#acts { display: flex; gap: 0.75rem; margin: 2rem 0 0; }
+#acts > * { box-sizing: border-box; flex: 1 1 0; min-height: 3rem; padding: 0.75rem 0.5rem; border: 1px solid currentColor; background: none; color: inherit; font: inherit; text-align: center; text-decoration: none; }
+#pull:disabled { opacity: 0.5; }
 #capture:not([href]) { display: none; }
-form { margin-top: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
-input { min-width: 12rem; }
-#evidence { max-height: 16rem; overflow: auto; margin: 1.5rem 0 0; padding: 0.75rem; border: 1px solid #ccc; font-family: monospace; font-size: 0.75rem; white-space: pre-wrap; -webkit-user-select: all; user-select: all; }
+#tokfold { margin: 2rem 0 0; }
+#toksum { box-sizing: border-box; min-height: 3rem; padding: 0.75rem 0; font-size: 0.9375rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+form { margin: 0.5rem 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+form > * { box-sizing: border-box; flex: 1 1 100%; min-height: 3rem; padding: 0.75rem; border: 1px solid currentColor; background: none; color: inherit; font: inherit; }
+#evidence { max-height: 16rem; overflow: auto; margin: 2rem 0 0; padding: 0.75rem; border: 1px solid #ccc; font-family: monospace; font-size: 0.75rem; white-space: pre-wrap; -webkit-user-select: all; user-select: all; }
 #evidence:empty { display: none; }
 </style>
 </head>
@@ -71,7 +77,7 @@ input { min-width: 12rem; }
 <button type="button" id="pull">Pull now</button>
 <a id="capture" rel="noreferrer">Capture something</a>
 <form id="tok">
-<input id="token" type="password" autocomplete="off">
+<input id="token" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
 <button type="submit">Remember</button>
 <button type="button" id="forget">Forget token</button>
 </form>
@@ -88,6 +94,12 @@ var EVAL_NEVER = "Farm not evaluated on the PC since it started.";
 // would turn the build red.
 var EDGES_HEAD = "Pulling against each other";
 var EDGES_NONE = "Nothing is pulling against anything right now.";
+// EMPTY-TWO - the second empty-edge sentence. EDGES_NONE means the wire
+// carried no clash at all. This one means the wire carried work and not one
+// row of it names two cards: the load is real and it sits inside a single
+// loop. Same class as EDGES_NONE and S1-S4 - signed operator text, ascii,
+// no farm data, nothing composed, nothing pluralised.
+var EDGES_INSIDE = "Work is due inside one loop. No loop is pulling on another.";
 var ARROW = " \u2192 ";
 // FI-6b - the schematic's geometry (G'-3). Constant coordinates in a fixed
 // viewBox: the picture measures nothing, so neither the phone's viewport nor a
@@ -128,6 +140,9 @@ var TASKS_FIRST = "Start here.";
 // operator text, ascii, no farm data. {when} arrives PC-composed through
 // withWhen, so the phone still owns no clock in this path.
 var CARD_AGE = "Last reported {when}.";
+// Job 5 (SEE-RACK B) - the third rack string. Same class as EVAL_NEVER and
+// CARD_AGE: constant operator text, ascii, no farm data, nothing composed.
+var RACK_NO_CEILING = "ceiling not set";
 // FI-4 - display titles. Six fixed labels for six fixed wire keys. Same class
 // as S1-S4: constant operator text that lives in the shell and is frozen by a
 // test. No farm data is involved and nothing is composed from the document -
@@ -220,7 +235,7 @@ function showCapture(doc) {
   var endpoint = doc.captureEndpoint;
   var token = localStorage.getItem(KEY) || "";
   if (endpoint && token) {
-    a.setAttribute("href", endpoint + "/a/" + encodeURIComponent(token));
+    a.setAttribute("href", endpoint + "/a/" + encodeURIComponent(token) + (doc.captureQuery || ""));
   } else {
     a.removeAttribute("href");
   }
@@ -356,7 +371,19 @@ function edgePath(a, b, lead) {
 // leads. G'-8a: the six rings are always drawn - six unconnected rings is the
 // true picture of a quiet farm. G'-7: currentColor only, no severity palette.
 // G'-10: aria-hidden, because the text rows below are the accessible layer.
-function drawSchematic(pairs, worst) {
+// RING-WEIGHT (WEIGHT-SRC A) - the ring's weight arrives as a number the PC
+// decided. 1 is the heavy stroke a lead edge already uses and 2 fills the disc,
+// so the picture borrows the rack cells' hollow/heavy/filled grammar instead of
+// inventing a second one. The phone owns no table: an unknown or missing weight
+// draws the hollow ring. G'-7 currentColor only. G'-6a static, never motion.
+// HERO-RING (OWNER A) - one extra ring marks the loop the hero clash is
+// owned by. The owner is a PC field on the same row that wrote the
+// sentence at the top of the face, so the ring and the sentence cannot
+// disagree. The phone owns no table: it matches the owner against RING
+// keys, so a missing or unknown owner matches nothing and paints
+// nothing. Same ink, same stillness - a wider circle, not a colour and
+// not a motion.
+function drawSchematic(pairs, worst, cards, hero) {
   var box = document.getElementById("schematic");
   box.textContent = "";
   var svg = document.createElementNS(SVGNS, "svg");
@@ -388,19 +415,36 @@ function drawSchematic(pairs, worst) {
   }
   for (var j = 0; j < RING.length; j++) {
     var n = NODES[RING[j]];
+    var w = null;
+    for (var k = 0; k < cards.length; k++) {
+      if (cards[k] && cards[k].card === RING[j]) {
+        w = cards[k].weight;
+        break;
+      }
+    }
     var ring = document.createElementNS(SVGNS, "circle");
     ring.setAttribute("cx", n.x);
     ring.setAttribute("cy", n.y);
     ring.setAttribute("r", "16");
-    ring.setAttribute("fill", "none");
+    ring.setAttribute("fill", w === 2 ? "currentColor" : "none");
     ring.setAttribute("stroke", "currentColor");
-    ring.setAttribute("stroke-width", "1.5");
+    ring.setAttribute("stroke-width", w === 1 ? "3" : "1.5");
     svg.appendChild(ring);
+    if (RING[j] === hero) {
+      var heroRing = document.createElementNS(SVGNS, "circle");
+      heroRing.setAttribute("cx", n.x);
+      heroRing.setAttribute("cy", n.y);
+      heroRing.setAttribute("r", "22");
+      heroRing.setAttribute("fill", "none");
+      heroRing.setAttribute("stroke", "currentColor");
+      heroRing.setAttribute("stroke-width", "1.5");
+      svg.appendChild(heroRing);
+    }
     var label = document.createElementNS(SVGNS, "text");
     label.setAttribute("x", n.lx);
     label.setAttribute("y", n.ly);
     label.setAttribute("text-anchor", n.anchor);
-    label.setAttribute("font-size", "12");
+    label.setAttribute("font-size", "15");
     label.setAttribute("fill", "currentColor");
     label.textContent = titleFor(RING[j]);
     svg.appendChild(label);
@@ -416,6 +460,7 @@ function showEdges(doc) {
     doc.worstClash && doc.worstClash.cards && doc.worstClash.cards.length === 2
       ? doc.worstClash.cards.join(">")
       : "";
+  var hero = (doc.worstClash && doc.worstClash.owner) || "";
   var seen = {};
   var pairs = [];
   var drawn = 0;
@@ -435,13 +480,28 @@ function showEdges(doc) {
   if (drawn === 0) {
     var none = document.createElement("p");
     none.className = "edge";
-    none.textContent = EDGES_NONE;
+    // EMPTY-TWO - `list` is doc.clashes. No clash on the wire keeps the
+    // original sentence. Clashes on the wire with no pair among them is the
+    // other farm, and it gets the other sentence. Same projection shape as
+    // TASKS_FIRST: one constant assigned to textContent, no template, no
+    // concatenation, no wire value on this line.
+    none.textContent = list.length === 0 ? EDGES_NONE : EDGES_INSIDE;
     box.appendChild(none);
   }
   // G'-9 - one paint. The picture is drawn from the set the rows were drawn
   // from, in the same call, so the two views are always exactly as stale as
   // each other and always agree on the lead edge.
-  drawSchematic(pairs, worst);
+  drawSchematic(pairs, worst, doc.cards || [], hero);
+}
+
+// Job 5 - one cell per tray. `n` arrives from the PC already summed: this
+// loop paints it and performs no arithmetic on it.
+function addCells(into, n, cls) {
+  for (var i = 0; i < n; i++) {
+    var cell = document.createElement("span");
+    cell.className = cls ? "rcell " + cls : "rcell";
+    into.appendChild(cell);
+  }
 }
 
 function showNumbers(doc) {
@@ -496,6 +556,30 @@ function showNumbers(doc) {
       age.className = "cage";
       age.textContent = withWhen(CARD_AGE, row.oldestRanAtDisplay);
       card.appendChild(age);
+    }
+    // Job 5 (SEE-RACK B) - the rack under its own card. Cells come from PC
+    // integers, the caption is the PC's sentence, and the ceiling line is
+    // constant operator text shown when the PC reports no ceiling. The phone
+    // counts nothing, pluralises nothing and compares nothing.
+    if (row.card === "rack" && doc.rack) {
+      var rk = doc.rack;
+      var strip = document.createElement("div");
+      strip.className = "rack";
+      strip.setAttribute("aria-hidden", "true");
+      addCells(strip, rk.light, "lit");
+      addCells(strip, rk.blackout, "dark");
+      addCells(strip, rk.hollow, "");
+      card.appendChild(strip);
+      var cap = document.createElement("p");
+      cap.className = "rcap";
+      cap.textContent = rk.caption ? rk.caption : "";
+      card.appendChild(cap);
+      if (rk.ceiling === null || rk.ceiling === undefined) {
+        var ceil = document.createElement("p");
+        ceil.className = "rceil";
+        ceil.textContent = RACK_NO_CEILING;
+        card.appendChild(ceil);
+      }
     }
     box.appendChild(card);
   }
@@ -607,10 +691,47 @@ function disarm() {
   }
 }
 
+// ACT-BAR A - Pull now and Capture something read as one act, two-up and in
+// flow. The box is built here and not served, so the document every gate reads
+// is byte for byte the document it signed: g8's order, f10a's anchor and
+// f11d's button are all untouched. Nothing passes a sibling - the two are
+// already adjacent and in this order - so this only draws a box around them.
+function wrapActs() {
+  var pull = document.getElementById("pull");
+  var cap = document.getElementById("capture");
+  var bar = document.createElement("div");
+  bar.id = "acts";
+  pull.parentNode.insertBefore(bar, pull);
+  bar.appendChild(pull);
+  bar.appendChild(cap);
+}
+
+// TOKEN-FOLD A - an unpaired phone opens on the form, because pairing is the
+// only thing it can do; a paired phone opens on the numbers and keeps the form
+// one tap away. The summary is a disclosure and not a control: it is not a
+// a control. It sends nothing, it decides nothing and it touches no farm state.
+// The label is the word the Forget token button already ships, capitalised.
+var TOKEN_FOLD = "Token";
+function wrapToken() {
+  var form = document.getElementById("tok");
+  var box = document.createElement("details");
+  box.id = "tokfold";
+  var sum = document.createElement("summary");
+  sum.id = "toksum";
+  sum.textContent = TOKEN_FOLD;
+  form.parentNode.insertBefore(box, form);
+  box.appendChild(sum);
+  box.appendChild(form);
+  box.open = !localStorage.getItem(KEY);
+}
+
 document.getElementById("tok").addEventListener("submit", function (e) {
   e.preventDefault();
   var token = document.getElementById("token").value.trim();
-  if (token) localStorage.setItem(KEY, token);
+  if (token) {
+    localStorage.setItem(KEY, token);
+    document.getElementById("tokfold").open = false;
+  }
   else localStorage.removeItem(KEY);
   backoff = 1;
   skipTicks = 0;
@@ -623,6 +744,7 @@ document.getElementById("forget").addEventListener("click", function () {
   disarm();
   localStorage.removeItem(KEY);
   document.getElementById("token").value = "";
+  document.getElementById("tokfold").open = true;
   held = null;
   paintEmpty();
 });
@@ -639,6 +761,8 @@ document.addEventListener("visibilitychange", tick);
 // a pull happens, so Back never becomes a second Pull now - the bypass option
 // was declined.
 window.addEventListener("pageshow", tick);
+wrapActs();
+wrapToken();
 if (localStorage.getItem(KEY)) arm();
 load();
 </script>

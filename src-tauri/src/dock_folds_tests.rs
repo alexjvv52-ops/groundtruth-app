@@ -4,9 +4,11 @@ use crate::attention;
 use crate::db;
 use crate::dock_folds::{
     capture_endpoint, card_for_check, cards_from_rows, check_body, check_title, clash_cards,
-    clashes_read_only, ids_for_card, phone_queue_facts, scope_for_check, severity_for_ids,
-    today_attention_order, worst_clash, worst_clash_read_only, worst_of, STANDING_SHORTFALL_RANK,
+    clashes_read_only, ids_for_card, phone_queue_facts, rack_face, scope_for_check,
+    severity_for_ids, today_attention_order, worst_clash, worst_clash_read_only, worst_of,
+    STANDING_SHORTFALL_RANK,
 };
+use crate::field_devices;
 use crate::health::{CheckStatus, Severity, REPORTED_CHECKS};
 use crate::marketing;
 use crate::scans;
@@ -763,6 +765,94 @@ fn f10e_capture_endpoint_is_none_when_unconfigured_and_is_never_a_path() {
         !e.contains("fixture_token"),
         "the pull token is not the endpoint"
     );
+}
+
+/// Job 4 - splitting the encoder must not move one byte of the pairing
+/// link. crop_query is that link's own suffix, proved by rebuilding the
+/// link from it.
+#[test]
+fn f10i_crop_query_is_the_pairing_link_suffix() {
+    let conn = mem();
+    scans::set_config(&conn, Some("https://scans.example/"), Some("fixture_token")).unwrap();
+    let token = "0123456789abcdef0123456789abcdef";
+    let q = field_devices::crop_query(&conn).unwrap();
+    assert!(q.is_empty() || q.starts_with("?c="));
+    assert!(!q.contains("/a/"));
+    assert!(!q.contains(token));
+    let link = field_devices::pairing_link(&conn, token)
+        .unwrap()
+        .expect("configured");
+    assert_eq!(link, format!("https://scans.example/a/{token}{q}"));
+    let crops = trays::list_crops(&conn).unwrap();
+    if !crops.is_empty() {
+        assert!(q.starts_with("?c="), "a farm with crops has a query");
+        assert_eq!(q.matches("c=").count(), crops.len(), "one c= per crop");
+    }
+}
+
+/// Job 5 (SEE-RACK B) - the rack face is PC math. The caption carries the
+/// plural, the hollow count carries the CEILING rule, and the phone is handed
+/// both finished.
+#[test]
+fn f12b_rack_face_caption_and_hollow_are_composed_on_the_pc() {
+    let mut conn = mem();
+    let empty = rack_face(&conn).unwrap();
+    assert_eq!(empty.light, 0);
+    assert_eq!(empty.blackout, 0);
+    assert_eq!(empty.ceiling, None);
+    assert_eq!(empty.hollow, 6);
+    assert_eq!(empty.caption, "Nothing on the rack");
+
+    let crops = trays::list_crops(&conn).unwrap();
+    let crop_id = &crops[0].id;
+    let first = trays::sow_tray(&mut conn, crop_id, 1).unwrap();
+    let one = rack_face(&conn).unwrap();
+    assert_eq!(one.blackout, 1);
+    assert_eq!(one.light + one.blackout, 1);
+    assert_eq!(one.hollow, 0);
+    assert_eq!(one.caption, "1 tray on the rack");
+
+    trays::sow_tray(&mut conn, crop_id, 1).unwrap();
+    trays::sow_tray(&mut conn, crop_id, 1).unwrap();
+    let many = rack_face(&conn).unwrap();
+    let live = many.light + many.blackout;
+    assert!(live >= 2);
+    assert_eq!(
+        many.caption,
+        format!("{} on the rack", crate::reachability::tray_word(live))
+    );
+
+    let before = many.caption.clone();
+    trays::advance_tray(&mut conn, &first.id).unwrap();
+    let split = rack_face(&conn).unwrap();
+    assert_eq!(split.light + split.blackout, live);
+    assert_eq!(split.caption, before);
+
+    let l = 4i64;
+    let b = 3i64;
+    assert!(l + b > live);
+    trays::set_shelf_capacity(&conn, Some(l), Some(b)).unwrap();
+    let capped = rack_face(&conn).unwrap();
+    assert_eq!(capped.ceiling, Some(l + b));
+    assert_eq!(capped.hollow, l + b - live);
+
+    let l = 1i64;
+    let b = 1i64;
+    assert!(l + b < live);
+    trays::set_shelf_capacity(&conn, Some(l), Some(b)).unwrap();
+    let tight = rack_face(&conn).unwrap();
+    assert_eq!(tight.hollow, 0);
+    assert_eq!(tight.ceiling, Some(l + b));
+    assert_eq!(
+        tight.caption,
+        format!("{} on the rack", crate::reachability::tray_word(live))
+    );
+    assert_eq!(tight.light + tight.blackout, live);
+
+    trays::set_shelf_capacity(&conn, Some(4), None).unwrap();
+    let half = rack_face(&conn).unwrap();
+    assert_eq!(half.ceiling, None);
+    assert_eq!(half.hollow, 0);
 }
 
 /// C1 (INT-001, D2). A failed standing-demand read propagates instead of

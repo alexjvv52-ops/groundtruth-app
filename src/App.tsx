@@ -21,6 +21,9 @@ import type { MoneyFocus } from "@/farm/surfaces";
  * stays muted because it is a read-only reporting lens and not part of the daily
  * loop (B-7, B-5(b)). Settings stays last and right-aligned. When the labels no
  * longer fit, the row wraps rather than colliding.
+ *
+ * DESK-LIFE — the tab row is a strip on a hairline; the selected tab is a bottom
+ * border in ink; the healthy mark sits at the row's end. Sentences unchanged.
  */
 type Destination = "today" | "farm" | "marketing" | "money" | "health" | "books" | "settings";
 function Badge({ severity, label }: { severity: Severity | null; label: string }) {
@@ -45,6 +48,7 @@ function App() {
   const [newPaidCount, setNewPaidCount] = useState(0);
   const [pollTick, setPollTick] = useState(0);
   const [moneyFocus, setMoneyFocus] = useState<MoneyFocus | null>(null);
+  const [marketingFocus, setMarketingFocus] = useState<"new-venue" | null>(null);
   async function loadHealth() {
     try {
       const next = await healthStatus();
@@ -99,12 +103,15 @@ function App() {
   }, []);
   const moneySeverity =
     folds?.cards.find((c) => c.card === "money")?.severity ?? null;
-  const navActive = "font-medium underline underline-offset-4";
-  const navIdle = "text-muted-foreground";
+  // DESK-LIFE — one base for the seven tabs; the seven className lines below are untouched.
+  const navBase =
+    "-mb-px min-h-11 border-b-2 transition-colors duration-150 motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
+  const navActive = `${navBase} border-foreground font-medium text-foreground`;
+  const navIdle = `${navBase} border-transparent text-muted-foreground hover:text-foreground`;
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-md flex-col">
-      <header className="flex flex-col gap-3 px-6 pt-6">
-        <nav className="flex flex-wrap gap-x-3 gap-y-1 text-sm min-[440px]:gap-x-4">
+    <div className="mx-auto flex min-h-screen w-full flex-col">
+      <header className="flex flex-col gap-3 pt-6">
+        <nav className="flex flex-wrap items-end gap-x-3 border-b border-border px-6 text-sm min-[440px]:gap-x-4">
           <button
             type="button"
             className={destination === "today" ? navActive : navIdle}
@@ -122,7 +129,7 @@ function App() {
           <button
             type="button"
             className={destination === "marketing" ? navActive : navIdle}
-            onClick={() => setDestination("marketing")}
+            onClick={() => { setMarketingFocus(null); setDestination("marketing"); }}
           >
             Marketing
           </button>
@@ -162,50 +169,56 @@ function App() {
           >
             Settings
           </button>
+          <StatusMark statuses={statuses} folds={folds} inline />
         </nav>
-        <StatusMark
-          statuses={statuses}
-          folds={folds}
-          onOpenHealth={() => setDestination("health")}
-        />
+        <div className="mx-auto w-full max-w-md px-6 empty:hidden">
+          <StatusMark
+            statuses={statuses}
+            folds={folds}
+            onOpenHealth={() => setDestination("health")}
+          />
+        </div>
       </header>
-      {destination === "today" ? (
-        <Today
-          newPaidCount={newPaidCount}
-          pollTick={pollTick}
-          onOpenMoney={(focus) => {
-            setMoneyFocus(focus ?? null);
-            setDestination("money");
-          }}
-          onOpenMarketing={() => setDestination("marketing")}
-          onOpenSettings={() => setDestination("settings")}
-          // B2-F1 (B2-D4) — the phone-captures pointer taps through to Farm. Navigation only.
-          onOpenFarm={() => setDestination("farm")}
-          // SOP-7 (C-6) — the Health tail card's Open Health. Navigation only; the same closure StatusMark gets.
-          onOpenHealth={() => setDestination("health")}
-        />
-      ) : destination === "farm" ? (
-        <Reality pollTick={pollTick} />
-      ) : destination === "marketing" ? (
-        <Marketing />
-      ) : destination === "money" ? (
-        // B1-F2 (D14) — "Back to Today" after a deep-linked write. Navigation only.
-        <Money
-          focus={moneyFocus}
-          onFocusHandled={() => setMoneyFocus(null)}
-          onBackToToday={() => setDestination("today")}
-        />
-      ) : destination === "books" ? (
-        <Books />
-      ) : destination === "settings" ? (
-        <Settings />
-      ) : (
-        <Health
-          onStatusesChange={(next) => {
-            setStatuses(next);
-          }}
-        />
-      )}
+      <div key={destination} className="animate-in fade-in-0 duration-150 motion-reduce:animate-none">
+        {destination === "today" ? (
+          <Today
+            newPaidCount={newPaidCount}
+            pollTick={pollTick}
+            onOpenMoney={(focus) => {
+              setMoneyFocus(focus ?? null);
+              setDestination("money");
+            }}
+            onOpenMarketing={(focus) => { setMarketingFocus(focus ?? null); setDestination("marketing"); }}
+            onOpenSettings={() => setDestination("settings")}
+            // B2-F1 (B2-D4) — the phone-captures pointer taps through to Farm. Navigation only.
+            onOpenFarm={() => setDestination("farm")}
+            // SOP-7 (C-6) — the Health tail card's Open Health. Navigation only; the same closure StatusMark gets.
+            onOpenHealth={() => setDestination("health")}
+          />
+        ) : destination === "farm" ? (
+          <Reality pollTick={pollTick} />
+        ) : destination === "marketing" ? (
+          // FIRST-15 — the new-venue deep link. Navigation only; Marketing writes nothing on arrival.
+          <Marketing focus={marketingFocus} onFocusHandled={() => setMarketingFocus(null)} />
+        ) : destination === "money" ? (
+          // B1-F2 (D14) — "Back to Today" after a deep-linked write. Navigation only.
+          <Money
+            focus={moneyFocus}
+            onFocusHandled={() => setMoneyFocus(null)}
+            onBackToToday={() => setDestination("today")}
+          />
+        ) : destination === "books" ? (
+          <Books />
+        ) : destination === "settings" ? (
+          <Settings />
+        ) : (
+          <Health
+            onStatusesChange={(next) => {
+              setStatuses(next);
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

@@ -4,22 +4,35 @@ type Props = {
   statuses: CheckStatus[] | null;
   folds: DockFoldsView | null;
   onOpenHealth?: () => void;
+  /** DESK-LIFE — the mount inside the nav row: only the healthy dot, never a sentence. */
+  inline?: boolean;
 };
 
 /**
  * Shell header mark on every screen.
- * Healthy: the life-green dot. Degraded: one amber sentence in a quiet tinted container.
+ * Healthy: the life-green dot, rendered by the inline mount at the end of the nav row
+ * (DESK-LIFE); the below-nav mount is silent when Healthy. Degraded: one amber sentence in a quiet tinted container.
  * Unhealthy: one red line with a severity dot, in a quiet tinted container — no dismiss control, and no loud filled
  * block. The shell states the failure; it does not own the first visual slot. Today
  * opens on the forced morning action and an integrity pointer must not outrank it.
  */
-export function StatusMark({ statuses, folds, onOpenHealth }: Props) {
+export function StatusMark({ statuses, folds, onOpenHealth, inline = false }: Props) {
   if (statuses === null || folds === null) return null; // first fetch in flight — claim nothing
 
   // S2a: the PC owns the all-nine worst-of AND its absent state. An overall of null
   // is the one source of "no check has reported", so this sentence cannot drift from
   // what Health and the later dock port say. The rule is not repeated here.
   const worst = folds.overall;
+  // DESK-LIFE — the inline mount inside the nav row renders only the healthy dot;
+  // every sentence stays on the below-nav mount.
+  if (inline) {
+    return worst === "Healthy" ? (
+      <span
+        aria-label="Healthy"
+        className="ml-2 inline-block h-2 w-2 self-center rounded-full bg-emerald-600"
+      />
+    ) : null;
+  }
   if (worst === null) {
     return (
       <p className="text-sm text-amber-700">
@@ -27,14 +40,7 @@ export function StatusMark({ statuses, folds, onOpenHealth }: Props) {
       </p>
     );
   }
-  if (worst === "Healthy") {
-    return (
-      <span
-        aria-label="Healthy"
-        className="inline-block h-2 w-2 rounded-full bg-emerald-600"
-      />
-    );
-  }
+  if (worst === "Healthy") return null; // the dot lives on the inline mount
 
   const failed =
     statuses.find((s) => s.severity === worst) ?? statuses[0];

@@ -1,6 +1,7 @@
 //! J1 LINK-RETIRE — deactivate the parent's Payment Link after its local close.
 
 use crate::db;
+use crate::income::{self, RecordIncomeInput};
 use crate::leftover;
 use crate::money::{self, fake::FakeGateway, OrderBill, PaidSession, StripeGateway};
 use crate::poll;
@@ -62,7 +63,7 @@ fn link_session(
         session_id: session_id.into(),
         payment_intent: Some(format!("pi_{session_id}")),
         lines: Vec::new(),
-        currency: "cad".into(),
+        currency: "usd".into(),
         customer_email: None,
         paid_at: db::utc_now_rfc3339(),
         created,
@@ -162,6 +163,36 @@ fn j1_wholesale_cash_paid_retires_the_link() {
     let today = db::local_date_today();
     let view =
         wholesale::pay_order(&mut conn, &order.id, 600, &today, None, false, false, None).unwrap();
+    wholesale::retire_order_link(&gw, &view);
+    assert_eq!(view.state, "paid");
+    let plink = format!("plink_fake_{}", order.id);
+    assert_eq!(gw.state.lock().unwrap().deactivated_links, vec![plink]);
+}
+
+#[test]
+fn j1_wholesale_apply_income_retires_the_link() {
+    let mut conn = mem();
+    let order = priced_delivered(&mut conn);
+    let gw = FakeGateway::new();
+    wholesale::mint_payment_link_with(&mut conn, &gw, &order.id).unwrap();
+    let today = db::local_date_today();
+    let income = income::record_income(
+        &mut conn,
+        std::env::temp_dir().as_path(),
+        RecordIncomeInput {
+            amount_cents: 600,
+            source: order.venue_name.clone(),
+            category_id: "produce_you_grew".into(),
+            date_received: today,
+            descriptor: None,
+            receipt_source_path: None,
+        },
+        false,
+    )
+    .unwrap();
+    let view =
+        wholesale::settle_order_with_income(&mut conn, &order.id, &income.income_id, false, None)
+            .unwrap();
     wholesale::retire_order_link(&gw, &view);
     assert_eq!(view.state, "paid");
     let plink = format!("plink_fake_{}", order.id);

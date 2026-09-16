@@ -1707,6 +1707,10 @@ pub fn settle_order_with_income(
         amount_ack,
         write_off,
     );
+    // J1 LINK-RETIRE: Apply income on a linked order spends the link. After the commit, best-effort.
+    if let Ok(view) = &result {
+        crate::wholesale::retire_order_link_from_db(&conn, view);
+    }
     flush_ok(&conn, &paths, result)
 }
 

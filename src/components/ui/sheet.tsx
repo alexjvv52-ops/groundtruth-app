@@ -69,8 +69,10 @@ function SheetContent({
             "inset-y-0 left-0 h-full w-3/4 border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm",
           side === "top" &&
             "inset-x-0 top-0 h-auto max-h-[85svh] border-b data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
+          // SHEET-SIDE B - at >=900px this bottom drawer becomes a 28rem right panel,
+          // the content column's own width; below 900px it stays a bottom drawer.
           side === "bottom" &&
-            "inset-x-0 bottom-0 h-auto max-h-[85svh] border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
+            "inset-x-0 bottom-0 h-auto max-h-[85svh] border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom min-[900px]:inset-y-0 min-[900px]:right-0 min-[900px]:left-auto min-[900px]:h-full min-[900px]:max-h-none min-[900px]:w-[28rem]",
           className
         )}
         {...props}

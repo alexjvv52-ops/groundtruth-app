@@ -329,6 +329,39 @@ is written into the ledger at all: the decision moved, the mechanism did not.
 
 ---
 
+## GT-D13-USD — The mint bills US dollars: every Payment Link and retail Price is minted `usd`; `cad` is history
+
+**Decision.** Chosen 2026-09-08 by operator order (USD-OR-CAD: CURRENCY A,
+SCOPE A, COPY A rewritten, CAP C, SEAL CAD-OR-USD), signed on the E lab tree;
+it reaches D only when E lands. The Stripe currency string at every mint site
+is `usd`: the Price under a wholesale (`wo-`) or leftover (`lo-`) Payment Link
+and the retail offer Price in `src-tauri/src/stripe_client.rs`, the
+`wholesale.link_minted` and `leftover.link_minted` payloads, and the offers
+cart page's checkout post in `src-tauri/src/shop.rs`. The seal on both
+link_minted kinds accepts `usd` and `cad` — `cad` is history: every link minted
+before this decision replays and imports unchanged, and the poll's link gates
+take a paid session in either currency to the same cents check. The `$`
+printers do not move; they already print `usd` as `$`. There is no farm
+currency column and no currency picker: the app mints one currency, and the
+Connect Stripe sheet on Money says which. This names and supersedes GT-D13's
+currency clause — "rewiring currency for live sale — except by a future signed
+decision that names and supersedes this one" — which GT-D13-R left standing.
+
+**Forbids.** A per-farm currency, an exchange rate, a second mint currency, or
+a currency that arrives by setting, checkbox, environment variable, request
+parameter or flag file. `cad` is accepted at the seal and the gate for history
+only — nothing mints it.
+
+**Prevents.** A register whose tax lines are Schedule F and C carrying links
+that bill Canadian dollars while the desk prints a plain `$` — two currencies
+under one symbol. GT-D13's real guarantee holds: the currency a farm mints in
+cannot be changed by anyone who can edit a settings file, a deploy variable,
+or a request body.
+
+**Signed** 2026-09-08 (`usd-or-cad`, GT-D13 USD).
+
+---
+
 ## GT-D14 — The wholesale door: four order-book kinds, one money register, one capacity pool
 
 **Decision.** Four register-domain kinds are admitted for the wholesale order

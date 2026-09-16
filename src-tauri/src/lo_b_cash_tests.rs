@@ -62,7 +62,7 @@ fn paid_session(reference: &str, amount_cents: i64, session_id: &str) -> PaidSes
         session_id: session_id.to_string(),
         payment_intent: Some(format!("pi_{session_id}")),
         lines: Vec::new(),
-        currency: "cad".to_string(),
+        currency: "usd".to_string(),
         customer_email: None,
         paid_at: projection::handler_now(),
         created: 1,

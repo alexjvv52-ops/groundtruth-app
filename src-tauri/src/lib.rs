@@ -65,6 +65,8 @@ mod crop_library_tests;
 #[cfg(test)]
 mod dock_folds_tests;
 #[cfg(test)]
+mod dock_lab_tests;
+#[cfg(test)]
 mod dock_port_tests;
 #[cfg(test)]
 mod export_receivables_tests;
@@ -166,6 +168,8 @@ mod till_b_tests;
 mod unapplied_fact_tests;
 #[cfg(test)]
 mod undo_refusal_tests;
+#[cfg(test)]
+mod usd_mint_tests;
 #[cfg(test)]
 mod wave4_tests;
 #[cfg(test)]

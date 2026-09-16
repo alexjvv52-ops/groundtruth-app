@@ -589,7 +589,7 @@ fn h4fr_never_verified_is_calm_and_degraded() {
         },
     );
     assert_eq!(s.severity, Severity::Degraded);
-    assert!(s.sentence.contains("hasn't been verified yet"));
+    assert!(s.sentence.contains("has not been verified yet"));
     assert!(!s.sentence.contains("30 days"));
 }
 
@@ -625,7 +625,7 @@ fn h4fr_verified_then_healthy_and_failure_still_red() {
         },
     );
     assert_eq!(healthy.severity, Severity::Healthy);
-    assert!(!healthy.sentence.contains("hasn't been verified yet"));
+    assert!(!healthy.sentence.contains("has not been verified yet"));
 
     let failed = severity_for(
         "H4",

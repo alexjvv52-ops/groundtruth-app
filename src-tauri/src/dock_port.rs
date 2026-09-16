@@ -44,6 +44,7 @@ pub struct DockPortView {
     pub running: bool,
     pub port: Option<u16>,
     pub reach_url: Option<String>,
+    pub reach_qr: Option<Vec<Vec<bool>>>,
 }
 
 struct Running {
@@ -121,10 +122,15 @@ pub fn status() -> DockPortView {
 }
 
 fn port_view(running: bool, port: Option<u16>) -> DockPortView {
+    let reach_url = lan_reach_url(port);
+    let reach_qr = reach_url
+        .as_deref()
+        .and_then(|url| crate::wholesale::qr_modules(url).ok());
     DockPortView {
         running,
         port,
-        reach_url: lan_reach_url(port),
+        reach_url,
+        reach_qr,
     }
 }
 

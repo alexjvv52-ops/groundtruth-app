@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   CostCategory,
   CostEvent,
@@ -91,7 +92,7 @@ function unappliedAmount(amountCents: number | null): string {
 
 function unappliedSentence(status: string, stripeObject: string): string {
   if (status === "unmatched") {
-    return "A payment arrived that Farm OS couldn't match to a crop and harvest date.";
+    return "A payment arrived that Groundtruth couldn't match to a crop and harvest date.";
   }
   if (status === "unrecorded") {
     return "A payment couldn't be recorded.";
@@ -112,7 +113,7 @@ function unappliedSentence(status: string, stripeObject: string): string {
     return "A refund failed at Stripe. The order stays paid.";
   }
   if (status === "not_comparable") {
-    return "A refund arrived that Farm OS couldn't measure against the order. The order stays paid.";
+    return "A refund arrived that Groundtruth couldn't measure against the order. The order stays paid.";
   }
   if (status === "wholesale_not_delivered") {
     return "A venue paid a payment link before its order was marked delivered. Nothing was recorded. Mark it delivered, then record the payment with Paid…";
@@ -230,6 +231,46 @@ async function verifyPassWhen(): Promise<string | null> {
 function receiptLine(segments: (string | null)[]): string {
   return segments.filter((s): s is string => s != null && s !== "").join(" · ");
 }
+/**
+ * SEND-THE-BILL — the human title: the venue (a leftover bill says Leftover)
+ * and the harvest month day. The UUID stays in the mono receipt line.
+ */
+function billTitle(bill: InvoiceBillView): string {
+  const day = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(
+    parseLocalDate(bill.harvestDate),
+  );
+  const who = bill.venue?.name ?? (bill.parent === "leftover" ? "Leftover" : null);
+  return who != null ? `Invoice — ${who} · ${day}` : `Invoice — ${day}`;
+}
+/**
+ * SEND-THE-BILL — the bill as plain text for Copy bill and the mail body: the
+ * sheet's lines in the sheet's order, the receipt line included, then
+ * "Pay online: {url}" last when a link exists. Nothing the sheet does not print.
+ */
+function billText(bill: InvoiceBillView, farmName: string | null, receipt: string): string {
+  return [
+    farmName,
+    billTitle(bill),
+    bill.venue?.name ?? null,
+    bill.venue?.contact ?? null,
+    bill.venue?.phone ?? null,
+    bill.venue?.address ?? null,
+    `Harvest ${bill.harvestDate}${bill.deliveredOn != null ? ` · delivered ${bill.deliveredOn}` : ""}`,
+    ...bill.orderLines.map(
+      (line) =>
+        `${line.cropName} · ${line.trays} trays × ${cents(line.priceCentsPerTray)} = ${cents(line.lineTotalCents)}`,
+    ),
+    bill.leftoverLine != null
+      ? `Leftover ${bill.leftoverLine.cropName} · ${bill.leftoverLine.harvestedOn} · ${bill.leftoverLine.listedOz.toFixed(1)} oz`
+      : null,
+    `Total ${cents(bill.totalCents)}`,
+    bill.paidOn != null ? `Paid ${bill.paidOn}` : null,
+    receipt,
+    bill.paymentLinkUrl != null ? `Pay online: ${bill.paymentLinkUrl}` : null,
+  ]
+    .filter((line): line is string => line != null && line !== "")
+    .join("\n");
+}
 
 /**
  * Owed wording, mirrored from Today.tsx (owedLine — owed_lo_tests pins the
@@ -338,6 +379,10 @@ function emptyDraftLine(): DraftLine {
 const SETTLED_STATES = new Set(["paid", "written_off", "voided"]);
 const LIVE_VISIBLE = 5;
 const SETTLED_VISIBLE = 5;
+/// SEND-THE-BILL — the two places in the Wholesale card that are not an order
+/// row: the New order form and the bill. A row's place is its order id.
+const NEW_ORDER_FORM = "new-order";
+const BILL_SHEET = "bill";
 /// Cash in is a history, not a queue: it only grows, and unbounded it pushes
 /// Cash out and the corrections trail off the screen. Newest 7, matching the
 /// backup list (FarmBackupSheet.tsx:400).
@@ -370,7 +415,16 @@ export function Money({
   const [venues, setVenues] = useState<VenueView[]>([]);
   const [crops, setCrops] = useState<Crop[]>([]);
   const [stages, setStages] = useState<StageView[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setErrorLine] = useState<string | null>(null);
+  // SEND-THE-BILL — where the alert line was raised: an order id, NEW_ORDER_FORM
+  // or BILL_SHEET, so the same sentence also renders inside the Wholesale card
+  // under that row or form. A plain setError(line) belongs to no place and
+  // renders on the bottom line alone. One error, one sentence.
+  const [errorAt, setErrorAt] = useState<string | null>(null);
+  function setError(line: string | null, at: string | null = null) {
+    setErrorLine(line);
+    setErrorAt(at);
+  }
   const [correctTarget, setCorrectTarget] = useState<CostEvent | null>(null);
   const [voidTarget, setVoidTarget] = useState<CostEvent | null>(null);
   const [amount, setAmount] = useState("");
@@ -394,6 +448,8 @@ export function Money({
   const [loPayDate, setLoPayDate] = useState("");
   const [loPayDescriptor, setLoPayDescriptor] = useState("");
   const [invoiceBill, setInvoiceBill] = useState<InvoiceBillView | null>(null);
+  // SEND-THE-BILL — the bill whose text was last copied; "Copied" reads for it alone.
+  const [billCopiedFor, setBillCopiedFor] = useState<string | null>(null);
   // PACK-FACE (audit R-13) — the invoice header's farm name, read on Money
   // through farmDisplayName(), the same farm_config reader Settings uses.
   // One source: Money keeps no farm-name store and never writes the name.
@@ -462,6 +518,11 @@ export function Money({
   // the form can say so. Cleared when the venue changes or the order is
   // recorded. A proposal only: Record order is still the write.
   const [copiedFrom, setCopiedFrom] = useState<WholesaleOrderView | null>(null);
+  // FROM-STANDING — the draft lines were drafted from the venue's standing
+  // line, so the form can say so. Cleared when the venue changes, when Same as
+  // last order replaces the draft, or when the order is recorded. A proposal
+  // only: Record order is still the write.
+  const [draftedFromStanding, setDraftedFromStanding] = useState(false);
   const [unpricedLine, setUnpricedLine] = useState("");
   const [deliverRefusal, setDeliverRefusal] = useState<Record<string, string>>(
     {},
@@ -548,6 +609,8 @@ export function Money({
     if (!leftoverCropId && cropRows[0]) {
       setLeftoverCropId(cropRows[0].id);
     }
+    // FIRST-15 — an empty register opens on the verb it needs; first load only, never after a write.
+    if (!loaded && ws.length === 0) setNewOrderOpen(true);
     setLoaded(true);
   }
 
@@ -656,6 +719,69 @@ export function Money({
       })),
     );
     setCopiedFrom(o);
+    setDraftedFromStanding(false);
+  }
+  // FROM-STANDING — the chosen venue's standing split, when it has one. The
+  // control exists only for a venue whose standing line is split by variety:
+  // no standing row, or a /week total not yet split, is no control. Read from
+  // the StageView[] load() already fetches (list_stages). Read only.
+  const standingStageForVenue =
+    newVenueId === ""
+      ? null
+      : (stages.find(
+          (row) => row.venueId === newVenueId && row.stage === "standing",
+        ) ?? null);
+  const standingTargetsForVenue =
+    standingStageForVenue?.varietyTargets != null &&
+    Object.keys(standingStageForVenue.varietyTargets).length > 0
+      ? standingStageForVenue.varietyTargets
+      : null;
+  // FROM-STANDING — the price this venue was last billed for a crop: the
+  // newest prior order (the reader is newest ordered_on first; voided rows are
+  // not prior orders — the same rows Same as last order reads) that carries a
+  // line for the crop. No such order, or a line that was never priced, is
+  // blank, so PRICE_REQUIRED_LINE speaks before Record order does. Read only.
+  function lastPriceForVenueCrop(cropId: string): string {
+    const prior = wholesale.find(
+      (o) =>
+        o.venueId === newVenueId &&
+        o.state !== "voided" &&
+        o.lines.some((l) => l.cropId === cropId),
+    );
+    const line = prior?.lines.find((l) => l.cropId === cropId) ?? null;
+    return line?.priceCentsPerTray != null
+      ? (line.priceCentsPerTray / 100).toFixed(2)
+      : "";
+  }
+  // FROM-STANDING — draft this week's order from the venue's standing line:
+  // one draft line per variety target, trays = the target (the split is
+  // trays/week), in the order Today's cut-page block prints the split
+  // (crops.sortOrder, then A-Z). A target name resolves to the crop that
+  // carries that exact name, the way Today already does
+  // (crops.find((c) => c.name === v.name)); a name no crop carries keeps its
+  // tray count with the variety left to choose, so nothing is dropped quietly
+  // and nothing records until a variety is chosen. Harvest date is never
+  // carried. A proposal only — the standing line is not written and Record
+  // order remains the only write.
+  function applyFromStanding(targets: Record<string, number>) {
+    setError(null);
+    const rank = new Map(crops.map((c) => [c.name, c.sortOrder] as const));
+    const rankOf = (name: string) => rank.get(name) ?? Number.MAX_SAFE_INTEGER;
+    const split = Object.entries(targets).sort(
+      ([a], [b]) => rankOf(a) - rankOf(b) || (a < b ? -1 : a > b ? 1 : 0),
+    );
+    setNewLines(
+      split.map(([name, n]) => {
+        const crop = crops.find((c) => c.name === name) ?? null;
+        return {
+          cropId: crop?.id ?? "",
+          trays: String(n),
+          price: crop == null ? "" : lastPriceForVenueCrop(crop.id),
+        };
+      }),
+    );
+    setCopiedFrom(null);
+    setDraftedFromStanding(true);
   }
   // B2-F2 (B2-D7) — the Apply default: the delivered-unpaid order whose priced
   // total equals this income row's amount (the oldest such when several match);
@@ -772,7 +898,7 @@ export function Money({
       // the "Back to Today" control. Not a write; navigation only.
       if (orderId === focusedOrderId) setBackToTodayId(orderId);
     } catch (e: unknown) {
-      setError(errMessage(e));
+      setError(errMessage(e), orderId);
     } finally {
       setBusy(false);
     }
@@ -786,7 +912,7 @@ export function Money({
       await mintWholesalePaymentLink(orderId);
       await load();
     } catch (e: unknown) {
-      setError(errMessage(e));
+      setError(errMessage(e), orderId);
     } finally {
       setBusy(false);
     }
@@ -798,7 +924,7 @@ export function Money({
       await navigator.clipboard.writeText(o.paymentLinkUrl);
       setLinkCopiedId(o.id);
     } catch (e: unknown) {
-      setError(errMessage(e));
+      setError(errMessage(e), o.id);
     }
   }
 
@@ -907,7 +1033,7 @@ export function Money({
       setInvoiceBill(await wholesaleInvoiceBill(o.id));
     } catch (e) {
       setInvoiceBill(null);
-      setError(errMessage(e));
+      setError(errMessage(e), o.id);
     }
   }
   async function onInvoiceLeftover(l: LeftoverListingView) {
@@ -1016,7 +1142,7 @@ export function Money({
     if (!payingId || busy) return;
     const amountCents = parseDollarsToCents(payAmount);
     if (amountCents == null) {
-      setError("Amount must be a positive dollars figure.");
+      setError("Amount must be a positive dollars figure.", payingId);
       return;
     }
     if (pendingPayMismatch === null) {
@@ -1064,7 +1190,7 @@ export function Money({
       // form was. Navigation only; the write above is unchanged.
       if (paidId === focusedOrderId) setBackToTodayId(paidId);
     } catch (e: unknown) {
-      setError(errMessage(e));
+      setError(errMessage(e), payingId);
     } finally {
       setBusy(false);
     }
@@ -1095,7 +1221,7 @@ export function Money({
       }));
       await load();
     } catch (e: unknown) {
-      setError(errMessage(e));
+      setError(errMessage(e), o.id);
     } finally {
       setBusy(false);
       setReversingId(null);
@@ -1116,7 +1242,7 @@ export function Money({
       await writeOffBadDebt(o.id, line);
       await load();
     } catch (e: unknown) {
-      setError(errMessage(e));
+      setError(errMessage(e), o.id);
     } finally {
       setBusy(false);
       setWritingOffId(null);
@@ -1132,7 +1258,7 @@ export function Money({
       setVoidingId(null);
       await load();
     } catch (e: unknown) {
-      setError(errMessage(e));
+      setError(errMessage(e), voidingId);
     } finally {
       setBusy(false);
     }
@@ -1157,7 +1283,7 @@ export function Money({
       });
     const bad = lines.find((l) => "error" in l);
     if (bad && "error" in bad) {
-      setError(bad.error ?? "Could not save. Try again.");
+      setError(bad.error ?? "Could not save. Try again.", NEW_ORDER_FORM);
       return;
     }
     const ready = lines.filter(
@@ -1165,11 +1291,11 @@ export function Money({
         "cropId" in l,
     );
     if (!newVenueId) {
-      setError("Choose a venue.");
+      setError("Choose a venue.", NEW_ORDER_FORM);
       return;
     }
     if (ready.length === 0) {
-      setError("Add at least one variety.");
+      setError("Add at least one variety.", NEW_ORDER_FORM);
       return;
     }
     if (pendingOvercommit === null) {
@@ -1201,10 +1327,11 @@ export function Money({
       });
       setNewLines([emptyDraftLine()]);
       setCopiedFrom(null);
+      setDraftedFromStanding(false);
       setPendingOvercommit(null);
       await load();
     } catch (e: unknown) {
-      setError(errMessage(e));
+      setError(errMessage(e), NEW_ORDER_FORM);
     } finally {
       setBusy(false);
     }
@@ -1270,6 +1397,55 @@ export function Money({
     }
   }
 
+  // INTEGRITY-RECEIPT (LINE A) built once: the sheet's mono footer and the
+  // copied text read the same string.
+  const billReceipt =
+    invoiceBill != null
+      ? receiptLine([
+          farmName,
+          `Harvest ${invoiceBill.harvestDate}`,
+          verifyWhen != null ? `VERIFY-REPLAY PASS ${verifyWhen}` : null,
+          `Invoice ${invoiceBill.number}`,
+        ])
+      : null;
+  // SEND-THE-BILL — Copy bill and Email bill read the bill already on the
+  // sheet; neither writes, neither mints, and invoice.issued stays refused.
+  // Copy uses the clipboard the payment link already uses. Email opens the
+  // operator's own mail app through the opener plugin with the title as
+  // subject and the text as body; To stays empty because venues carry no
+  // email. A failure lands under the bill, on the same alert line.
+  async function onCopyBill() {
+    if (invoiceBill == null || billReceipt == null) return;
+    setError(null);
+    try {
+      await navigator.clipboard.writeText(billText(invoiceBill, farmName, billReceipt));
+      setBillCopiedFor(invoiceBill.number);
+    } catch (e: unknown) {
+      setError(errMessage(e), BILL_SHEET);
+    }
+  }
+  async function onEmailBill() {
+    if (invoiceBill == null || billReceipt == null) return;
+    setError(null);
+    try {
+      const subject = encodeURIComponent(billTitle(invoiceBill));
+      const body = encodeURIComponent(
+        billText(invoiceBill, farmName, billReceipt).replace(/\n/g, "\r\n"),
+      );
+      await openUrl(`mailto:?subject=${subject}&body=${body}`);
+    } catch (e: unknown) {
+      setError(errMessage(e), BILL_SHEET);
+    }
+  }
+  // SEND-THE-BILL — the alert line where it was raised. The bottom line stays.
+  function alertAt(at: string) {
+    if (error == null || errorAt !== at) return null;
+    return (
+      <p className="text-sm text-destructive" role="alert">
+        {error}
+      </p>
+    );
+  }
   function orderRow(o: WholesaleOrderView) {
     return (
             <li
@@ -1598,44 +1774,55 @@ export function Money({
                   </button>
                 </div>
               )}
+              {alertAt(o.id)}
             </li>
     );
   }
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-10 px-6 py-8">
-      <h1 className="text-3xl font-semibold tracking-tight">Money</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Money</h1>
       <p className="text-sm text-muted-foreground">
         What came in, what went out, what you fixed. Nothing else.
       </p>
 
       <section className="flex flex-col gap-2">
-        <p className="text-xl font-medium">{owedLine(owed)}</p>
-        {firstCollect != null ? (
-          <button
-            type="button"
-            onClick={() => setFocusedOrderId(firstCollect.id)}
-            className="flex min-h-11 items-center text-left text-base font-medium underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          >
-            Collect first: {firstCollect.venueName} —{" "}
-            {firstCollect.pricedTotalCents != null
-              ? cents(firstCollect.pricedTotalCents)
-              : "not priced yet"}
-            {firstCollect.deliveredAgeDays != null
-              ? `, ${deliveredUnpaidAge(firstCollect.deliveredAgeDays)}`
-              : ""}
-            .
-          </button>
-        ) : orderedCount > 0 ? (
-          <p className="text-base font-medium">
-            {orderedCount} ordered — nothing delivered to collect yet.
-          </p>
+        {loaded || error != null ? (
+          <>
+            <p className="text-3xl font-medium tabular-nums">{owedLine(owed)}</p>
+            {firstCollect != null ? (
+              <button
+                type="button"
+                onClick={() => setFocusedOrderId(firstCollect.id)}
+                className="flex min-h-11 items-center text-left text-base font-medium underline-offset-4 hover:underline active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                Collect first: {firstCollect.venueName} —{" "}
+                {firstCollect.pricedTotalCents != null
+                  ? cents(firstCollect.pricedTotalCents)
+                  : "not priced yet"}
+                {firstCollect.deliveredAgeDays != null
+                  ? `, ${deliveredUnpaidAge(firstCollect.deliveredAgeDays)}`
+                  : ""}
+                .
+              </button>
+            ) : orderedCount > 0 ? (
+              <p className="text-base font-medium">
+                {orderedCount} ordered — nothing delivered to collect yet.
+              </p>
+            ) : (
+              <p className="text-base font-medium">No live wholesale orders.</p>
+            )}
+            <p className="text-sm text-muted-foreground">
+              Wholesale: {openCount} open · {deliveredUnpaid.length} delivered, unpaid
+            </p>
+          </>
         ) : (
-          <p className="text-base font-medium">No live wholesale orders.</p>
+          <div className="flex flex-col gap-2" aria-hidden="true">
+            <div className="skeleton-block h-9 w-2/3" />
+            <div className="skeleton-block h-11 w-1/2" />
+            <div className="skeleton-block h-5 w-2/5" />
+          </div>
         )}
-        <p className="text-sm text-muted-foreground">
-          Wholesale: {openCount} open · {deliveredUnpaid.length} delivered, unpaid
-        </p>
       </section>
 
       <Card>
@@ -1648,28 +1835,6 @@ export function Money({
               That order is no longer open. The list below is the record.
             </p>
           )}
-          {/* GT-D23 — the key door sits where Payment link is offered. */}
-          {stripeAccount != null && (
-            <div className="flex flex-wrap items-center gap-3">
-              {stripeAccount.configured ? (
-                <>
-                  <p className="text-sm text-muted-foreground">
-                    Stripe: connected to {stripeAccount.accountName ?? "Stripe"} · {stripeAccount.mode ?? "test"} mode
-                  </p>
-                  <button type="button" className="text-sm underline underline-offset-4" onClick={openConnect}>
-                    Replace key
-                  </button>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm text-muted-foreground">Stripe: not connected.</p>
-                  <Button type="button" variant="outline" className="h-11 px-4 text-base" onClick={openConnect}>
-                    Connect Stripe
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
           <div className="flex flex-col gap-2">
             <h3 className="text-base font-medium">To collect ({liveRows.length})</h3>
             <ul className="flex flex-col gap-4 text-sm">
@@ -1679,7 +1844,7 @@ export function Money({
                   <button
                     type="button"
                     onClick={() => setShowAllLive(true)}
-                    className="px-2 py-3 text-left text-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    className="px-2 py-3 text-left text-sm text-muted-foreground underline-offset-4 hover:underline active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   >
                     Show {liveRows.length - LIVE_VISIBLE} more to collect
                   </button>
@@ -1701,7 +1866,7 @@ export function Money({
           {invoiceBill != null && (
             <section className="invoice-print flex flex-col gap-2 rounded-md border border-input p-4">
               <h2 className="text-lg font-medium">{farmName}</h2>
-              <p className="text-sm">Invoice {invoiceBill.number}</p>
+              <p className="text-sm">{billTitle(invoiceBill)}</p>
               {invoiceBill.venue != null && (
                 <div className="flex flex-col text-sm">
                   <span>{invoiceBill.venue.name}</span>
@@ -1734,15 +1899,22 @@ export function Money({
                   bill's harvest date, the last verify pass H4 reports, the
                   invoice number. A segment with no fact drops with its
                   separator. No code image on the bill; no verify run from here. */}
-              <p className="font-mono text-xs text-muted-foreground">
-                {receiptLine([
-                  farmName,
-                  `Harvest ${invoiceBill.harvestDate}`,
-                  verifyWhen != null ? `VERIFY-REPLAY PASS ${verifyWhen}` : null,
-                  `Invoice ${invoiceBill.number}`,
-                ])}
-              </p>
+              <p className="font-mono text-xs text-muted-foreground">{billReceipt}</p>
               <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="text-sm underline underline-offset-4"
+                  onClick={() => void onCopyBill()}
+                >
+                  {billCopiedFor === invoiceBill.number ? "Copied" : "Copy bill"}
+                </button>
+                <button
+                  type="button"
+                  className="text-sm underline underline-offset-4"
+                  onClick={() => void onEmailBill()}
+                >
+                  Email bill
+                </button>
                 <button
                   type="button"
                   className="text-sm underline underline-offset-4"
@@ -1760,6 +1932,7 @@ export function Money({
               </div>
             </section>
           )}
+          {alertAt(BILL_SHEET)}
           {settledRows.length > 0 && (
             <div className="flex flex-col gap-2">
               <h3 className="text-base font-medium text-muted-foreground">
@@ -1778,7 +1951,7 @@ export function Money({
                     <button
                       type="button"
                       onClick={() => setShowAllSettled(true)}
-                      className="px-2 py-3 text-left text-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                      className="px-2 py-3 text-left text-sm underline-offset-4 hover:underline active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                     >
                       Show {settledRows.length - SETTLED_VISIBLE} older settled
                     </button>
@@ -1801,7 +1974,7 @@ export function Money({
               New order
             </button>
             {newOrderOpen && (
-              <>
+              <div className="flex flex-col gap-3 animate-in fade-in-0 slide-in-from-top-1 duration-150 motion-reduce:animate-none">
             <label className="flex flex-col gap-1 text-sm">
               Venue
               <select
@@ -1810,6 +1983,7 @@ export function Money({
                 onChange={(e) => {
                   setNewVenueId(e.target.value);
                   setCopiedFrom(null);
+                  setDraftedFromStanding(false);
                 }}
               >
                 {venues.map((v) => (
@@ -1864,6 +2038,30 @@ export function Money({
                         Copied from the order for{" "}
                         {monthDayLabel(parseLocalDate(copiedFrom.harvestDate))}. Change
                         anything that differs.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {/* FROM-STANDING — this week's order from the venue's standing
+                    line: varieties and tray counts from the split printed
+                    above, prices from the venue's last orders. Sits next to
+                    Same as last order and shows only for a venue whose
+                    standing line is split. The operator edits anything and
+                    Record order remains the only write; the standing line
+                    itself is never written here. */}
+                {standingTargetsForVenue != null && (
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      className="self-start text-sm underline underline-offset-4"
+                      onClick={() => applyFromStanding(standingTargetsForVenue)}
+                    >
+                      From standing
+                    </button>
+                    {draftedFromStanding && (
+                      <p className="text-sm text-muted-foreground">
+                        Drafted from standing. Prices are from this venue&apos;s
+                        last orders. Change anything that differs.
                       </p>
                     )}
                   </div>
@@ -1961,9 +2159,32 @@ export function Money({
                   ? "Record anyway"
                   : "Record order"}
             </Button>
-              </>
+            {alertAt(NEW_ORDER_FORM)}
+              </div>
             )}
           </div>
+          {/* GT-D23 — the key door sits where Payment link is offered. */}
+          {stripeAccount != null && (
+            <div className="flex flex-wrap items-center gap-3">
+              {stripeAccount.configured ? (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Stripe: connected to {stripeAccount.accountName ?? "Stripe"} · {stripeAccount.mode ?? "test"} mode
+                  </p>
+                  <button type="button" className="text-sm underline underline-offset-4" onClick={openConnect}>
+                    Replace key
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">Stripe: not connected.</p>
+                  <Button type="button" variant="outline" className="h-11 px-4 text-base" onClick={openConnect}>
+                    Connect Stripe
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
       {/* LO-A (GT-D24) — leftover listings: harvested ounces the operator lists
@@ -2162,7 +2383,7 @@ export function Money({
             )}
             <p className="text-sm text-muted-foreground">A test key takes test cards only. A live key takes real money.</p>
             {leftoverOpen && (
-              <>
+              <div className="flex flex-col gap-3 animate-in fade-in-0 slide-in-from-top-1 duration-150 motion-reduce:animate-none">
                 <label className="flex flex-col gap-1 text-sm">
                   Crop
                   <select
@@ -2202,7 +2423,7 @@ export function Money({
                 >
                   {busy ? "Saving…" : "List leftover"}
                 </Button>
-              </>
+              </div>
             )}
           </div>
         </CardContent>
@@ -2222,7 +2443,7 @@ export function Money({
           <CardTitle>Cash in</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <p className="text-base font-semibold tabular-nums">{cents(cashIn)}</p>
+          <p className="text-3xl font-semibold tabular-nums">{cents(cashIn)}</p>
           <ul className="flex flex-col gap-2 text-sm">
             {(showAllIncome ? income : income.slice(0, INCOME_VISIBLE)).map((r) => {
               const applied = orderForIncome(r.incomeId);
@@ -2360,7 +2581,7 @@ export function Money({
                 <button
                   type="button"
                   onClick={() => setShowAllIncome(true)}
-                  className="px-2 py-3 text-left text-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="px-2 py-3 text-left text-sm text-muted-foreground underline-offset-4 hover:underline active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 >
                   Show older ({income.length - INCOME_VISIBLE})
                 </button>
@@ -2378,7 +2599,7 @@ export function Money({
           <CardTitle>Cash out</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <p className="text-base font-semibold tabular-nums">{cents(cashOut)}</p>
+          <p className="text-3xl font-semibold tabular-nums">{cents(cashOut)}</p>
           <ul className="flex flex-col gap-3 text-sm">
             {(showAllExpenses ? expenses : expenses.slice(0, MONEY_LIST_VISIBLE)).map((r) => (
               <li key={r.eventId} className="flex flex-col gap-2">
@@ -2408,7 +2629,7 @@ export function Money({
                 <button
                   type="button"
                   onClick={() => setShowAllExpenses(true)}
-                  className="px-2 py-3 text-left text-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="px-2 py-3 text-left text-sm text-muted-foreground underline-offset-4 hover:underline active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 >
                   Show older ({expenses.length - MONEY_LIST_VISIBLE})
                 </button>
@@ -2452,7 +2673,7 @@ export function Money({
                 <button
                   type="button"
                   onClick={() => setShowAllCorrections(true)}
-                  className="px-2 py-3 text-left text-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="px-2 py-3 text-left text-sm text-muted-foreground underline-offset-4 hover:underline active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 >
                   Show older ({corrections.length - MONEY_LIST_VISIBLE})
                 </button>
@@ -2492,7 +2713,7 @@ export function Money({
                 <button
                   type="button"
                   onClick={() => setShowAllUnapplied(true)}
-                  className="px-2 py-3 text-left text-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="px-2 py-3 text-left text-sm text-muted-foreground underline-offset-4 hover:underline active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 >
                   Show older ({unapplied.length - MONEY_LIST_VISIBLE})
                 </button>
@@ -2651,7 +2872,7 @@ export function Money({
             {connectStep === "paste" && (
               <div className="flex flex-col gap-4">
                 <p className="text-base text-muted-foreground">
-                  Farm OS mints payment links with a Stripe restricted key. You create a
+                  Groundtruth mints payment links with a Stripe restricted key. You create a
                   restricted key once; nothing else to manage day to day.
                 </p>
                 <ol className="list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
@@ -2672,8 +2893,11 @@ export function Money({
                   <li>Create the key and paste it below.</li>
                 </ol>
                 <p className="text-base text-muted-foreground">
-                  Farm OS accepts a test key or a live key. A live key moves real
+                  Groundtruth accepts a test key or a live key. A live key moves real
                   money the first time a customer pays.
+                </p>
+                <p className="text-base text-muted-foreground">
+                  Every payment link Groundtruth mints is billed in US dollars.
                 </p>
                 <label className="flex flex-col gap-2">
                   <span className="text-sm font-medium">Restricted key</span>
@@ -2706,11 +2930,6 @@ export function Money({
                     {connectPreview.mode === "test" ? "Test mode" : `${connectPreview.mode} mode`}
                   </p>
                 </div>
-                <p className="text-base text-muted-foreground">
-                  This must be a different Stripe account from the one your
-                  commercial farm uses. Farm OS must never record a sale that also
-                  exists in your other system.
-                </p>
                 <Button
                   type="button"
                   className="min-h-12"

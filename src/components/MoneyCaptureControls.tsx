@@ -37,7 +37,7 @@ export function MoneyCaptureControls({
         </button>
       )}
       {open && (
-        <>
+        <div className="flex flex-col gap-3 animate-in fade-in-0 slide-in-from-top-1 duration-150 motion-reduce:animate-none">
           <button type="button" className={ROW} onClick={() => setMoneyLeftOpen(true)}>
             Money just left
           </button>
@@ -56,7 +56,7 @@ export function MoneyCaptureControls({
           <button type="button" className={ROW} onClick={() => setCostPerTrayOpen(true)}>
             What a tray costs
           </button>
-        </>
+        </div>
       )}
       <MoneyJustLeftSheet
         open={moneyLeftOpen}

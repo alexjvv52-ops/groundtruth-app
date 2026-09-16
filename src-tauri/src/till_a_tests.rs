@@ -53,7 +53,7 @@ fn session(
             quantity: 1,
             amount_cents: amount,
         }],
-        currency: "cad".into(),
+        currency: "usd".into(),
         customer_email: None,
         paid_at: db::utc_now_rfc3339(),
         created: 1_700_000_000,
@@ -291,7 +291,7 @@ fn till_a_refund_on_a_link_payment_is_named_and_the_walk_advances() {
         session_id: None,
         created: 1_700_000_100,
         amount_cents: Some(600),
-        currency: Some("cad".into()),
+        currency: Some("usd".into()),
         status: Some("succeeded".into()),
     });
     let r2 = poll::run_poll(&mut conn, &gw).unwrap();

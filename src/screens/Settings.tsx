@@ -96,7 +96,7 @@ function FarmNameSection() {
         </label>
         <Button
           type="button"
-          className="h-12 self-start px-4 text-base"
+          className="h-12 self-start px-4 text-base active:translate-y-px"
           disabled={busy}
           onClick={() => void onSave()}
         >
@@ -366,7 +366,7 @@ export function Settings() {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-6 py-8">
-      <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
       <p className="text-sm text-muted-foreground">
         How this farm is configured and governed. Nothing here is a daily
         action, and nothing here raises an alarm — problems still surface on
@@ -440,7 +440,7 @@ export function Settings() {
           <div className="flex flex-wrap items-center gap-3">
             <Button
               type="button"
-              className="h-12 px-6 text-base"
+              className="h-12 px-6 text-base active:translate-y-px"
               disabled={spaceBusy}
               onClick={() => void handleSaveSpace()}
             >
@@ -476,7 +476,7 @@ export function Settings() {
             <Button
               type="button"
               variant="outline"
-              className="h-11 px-4"
+              className="h-11 px-4 active:translate-y-px"
               disabled={pairBusy}
               onClick={() => void handlePair()}
             >
@@ -486,7 +486,7 @@ export function Settings() {
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 px-4"
+                className="h-11 px-4 active:translate-y-px"
                 disabled={pairBusy}
                 onClick={() => void handleCopyLink()}
               >
@@ -497,7 +497,7 @@ export function Settings() {
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 px-4"
+                className="h-11 px-4 active:translate-y-px"
                 disabled={pairBusy}
                 onClick={() => void handleCopyToken()}
               >
@@ -508,7 +508,7 @@ export function Settings() {
               <Button
                 type="button"
                 variant="ghost"
-                className="h-11 px-4"
+                className="h-11 px-4 active:translate-y-px"
                 disabled={pairBusy}
                 onClick={() => void handleRetire()}
               >
@@ -530,7 +530,32 @@ export function Settings() {
           <p className="text-sm">{dock?.running ? "Running." : "Off."}</p>
           <p className="text-sm text-muted-foreground">{DOCK_HOW_COPY}</p>
           {dock?.reachUrl ? (
-            <p className="text-sm break-all select-all">{dock.reachUrl}</p>
+            <>
+              <p className="text-sm break-all select-all">{dock.reachUrl}</p>
+              {(() => {
+                const qr = dock.reachQr;
+                if (!qr) return null;
+                const side = qr.length + 8;
+                return (
+                  <svg
+                    role="img"
+                    aria-label="QR code for the Dock address"
+                    width={200}
+                    height={200}
+                    viewBox={`0 0 ${side} ${side}`}
+                    shapeRendering="crispEdges"
+                    className="self-start"
+                  >
+                    <rect x={0} y={0} width={side} height={side} fill="#fff" />
+                    {qr.map((row, y) =>
+                      row.map((dark, x) =>
+                        dark ? <rect key={`${y}-${x}`} x={x + 4} y={y + 4} width={1} height={1} fill="#000" /> : null,
+                      ),
+                    )}
+                  </svg>
+                );
+              })()}
+            </>
           ) : dock?.port != null ? (
             <p className="text-sm">Port {dock.port}</p>
           ) : null}
@@ -538,7 +563,7 @@ export function Settings() {
             <Button
               type="button"
               variant="outline"
-              className="h-11 px-4"
+              className="h-11 px-4 active:translate-y-px"
               disabled={dockBusy}
               onClick={() => void (dock?.running ? handleDockStop() : handleDockStart())}
             >
@@ -617,7 +642,7 @@ export function Settings() {
           <Button
             type="button"
             variant="outline"
-            className="h-12 self-start text-base"
+            className="h-12 self-start text-base active:translate-y-px"
             onClick={() => setBackupOpen(true)}
           >
             Open Backup &amp; Export

@@ -628,8 +628,8 @@ fn severity_h4(evidence: Option<&Evidence>, now_utc: &str, extra: &CheckInputs) 
                     check_id: "H4".into(),
                     severity: Severity::Degraded,
                     sentence: "H4 Core data intact — quick_check ok. This farm \
-                         hasn't been verified yet. Run Verify now on the Health \
-                         page once, so the app can confirm the record is intact."
+                         has not been verified yet. Run System Scan on Health \
+                         once to confirm the record is intact."
                         .into(),
                     ran_at,
                 }
