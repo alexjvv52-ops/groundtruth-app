@@ -1772,7 +1772,7 @@ fn gt17e_second_kind_in_closed_set_and_v29_triggers_refuse_until_v30() {
         "standing.requested",
     ];
     assert_eq!(Kind::ALL.len(), 54);
-    assert_eq!(db::SCHEMA_VERSION, 44);
+    assert_eq!(db::SCHEMA_VERSION, 45);
     let k = Kind::parse("standing.request_decided").unwrap();
     assert_eq!(k, Kind::StandingRequestDecided);
     assert_eq!(k.as_str(), "standing.request_decided");

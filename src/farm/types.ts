@@ -906,3 +906,14 @@ export type InvoiceBillView = {
   paidOn: string | null;
   paymentLinkUrl: string | null;
 };
+/** GT-D26 WORLD-PAY: the farm currency new mints are billed in. Config, not an event. */
+export type CurrencyChoice = {
+  code: string;
+  name: string;
+};
+export type FarmCurrencyView = {
+  code: string;
+  name: string;
+  symbol: string;
+  choices: CurrencyChoice[];
+};

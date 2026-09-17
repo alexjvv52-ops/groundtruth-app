@@ -84,8 +84,8 @@ fn face_invoice_keeps_the_inv_a_field_bytes() {
     let src = money();
     let fields = [
         r#"<p className="text-sm">{billTitle(invoiceBill)}</p>"#,
-        "{line.cropName} · {line.trays} trays × {cents(line.priceCentsPerTray)} = {cents(line.lineTotalCents)}",
-        r#"<p className="text-base font-medium">Total {cents(invoiceBill.totalCents)}</p>"#,
+        r#"{line.cropName} · {line.trays} trays × {cents(line.priceCentsPerTray, currency?.symbol ?? "$")} = {cents(line.lineTotalCents, currency?.symbol ?? "$")}"#,
+        r#"<p className="text-base font-medium">Total {cents(invoiceBill.totalCents, currency?.symbol ?? "$")}</p>"#,
         "onClick={() => window.print()}",
         "onClick={() => setInvoiceBill(null)}",
         "\n                  Print\n",

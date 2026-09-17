@@ -6,6 +6,7 @@ mod commands;
 mod consumption;
 mod cost_per_tray;
 mod costs;
+mod currency;
 mod db;
 mod divergence;
 mod dock_folds;
@@ -405,6 +406,10 @@ pub fn run() {
                 commands::seed_on_hand,
                 commands::farm_display_name,
                 commands::set_farm_display_name,
+                commands::farm_currency,
+                commands::set_farm_currency,
+                commands::farm_pay_instructions,
+                commands::set_farm_pay_instructions,
                 commands::wholesale_invoice_bill,
                 commands::leftover_invoice_bill,
                 commands::list_wholesale_orders,
@@ -581,6 +586,10 @@ pub fn run() {
                 commands::seed_on_hand,
                 commands::farm_display_name,
                 commands::set_farm_display_name,
+                commands::farm_currency,
+                commands::set_farm_currency,
+                commands::farm_pay_instructions,
+                commands::set_farm_pay_instructions,
                 commands::wholesale_invoice_bill,
                 commands::leftover_invoice_bill,
                 commands::list_wholesale_orders,

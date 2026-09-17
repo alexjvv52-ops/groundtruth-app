@@ -93,13 +93,15 @@ impl StripeHttp for UreqHttp {
 pub struct StripeClient<H: StripeHttp> {
     http: H,
     mode: String,
+    currency: String,
 }
 
 impl StripeClient<UreqHttp> {
-    pub fn with_key(key: &str, mode: &str) -> Self {
+    pub fn with_key(key: &str, mode: &str, currency: &str) -> Self {
         Self {
             http: UreqHttp::new(key),
             mode: mode.to_string(),
+            currency: currency.to_ascii_lowercase(),
         }
     }
 }
@@ -110,7 +112,14 @@ impl<H: StripeHttp> StripeClient<H> {
         Self {
             http,
             mode: mode.into(),
+            currency: crate::currency::DEFAULT_CURRENCY.to_string(),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_currency(mut self, currency: &str) -> Self {
+        self.currency = currency.to_ascii_lowercase();
+        self
     }
 
     #[cfg(test)]
@@ -219,7 +228,7 @@ impl<H: StripeHttp> StripeGateway for StripeClient<H> {
             &[
                 ("product", product_id.as_str()),
                 ("unit_amount", unit.as_str()),
-                ("currency", "usd"),
+                ("currency", self.currency.as_str()),
                 ("metadata[harvest_date]", &offer.harvest_date),
                 ("metadata[crop_id]", &offer.crop_id),
                 ("metadata[offer_id]", &offer.id),
@@ -337,7 +346,7 @@ impl<H: StripeHttp> StripeGateway for StripeClient<H> {
             &[
                 ("product", product_id.as_str()),
                 ("unit_amount", unit.as_str()),
-                ("currency", "usd"),
+                ("currency", self.currency.as_str()),
                 (meta_key, bill.order_id.as_str()),
             ],
             &format!("{idem}-price-{}", bill.order_id),
@@ -369,7 +378,11 @@ impl<H: StripeHttp> StripeGateway for StripeClient<H> {
             .and_then(|x| x.as_str())
             .ok_or_else(|| "Stripe did not return a payment link url.".to_string())?
             .to_string();
-        Ok(MintedLink { link_id, url })
+        Ok(MintedLink {
+            link_id,
+            url,
+            currency: self.currency.clone(),
+        })
     }
 
     fn list_paid_sessions(&self, since: Option<&str>) -> Result<Vec<PaidSession>, String> {

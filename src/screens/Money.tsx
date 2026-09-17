@@ -4,6 +4,7 @@ import type {
   CostCategory,
   CostEvent,
   Crop,
+  FarmCurrencyView,
   IncomeRecord,
   MoneyCorrection,
   MoneyStatus,
@@ -39,7 +40,9 @@ import {
   openShopPageFolder,
   wholesaleInvoiceBill,
   leftoverInvoiceBill,
+  farmCurrency,
   farmDisplayName,
+  farmPayInstructions,
   healthStatus,
   listCostCategories,
   listCrops,
@@ -68,6 +71,7 @@ import {
   voidWholesaleOrder,
 } from "@/farm/api";
 import { localToday, monthDayLabel, parseLocalDate } from "@/farm/dates";
+import { formatCents } from "@/farm/dollars";
 import {
   Sheet,
   SheetContent,
@@ -82,12 +86,12 @@ import {
 } from "@/components/ui/card";
 import { MoneyCaptureControls } from "@/components/MoneyCaptureControls";
 
-function cents(n: number): string {
-  return `$${(n / 100).toFixed(2)}`;
+function cents(n: number, symbol = "$"): string {
+  return formatCents(n, symbol);
 }
 
-function unappliedAmount(amountCents: number | null): string {
-  return amountCents != null ? cents(amountCents) : "amount not captured";
+function unappliedAmount(amountCents: number | null, symbol = "$"): string {
+  return amountCents != null ? cents(amountCents, symbol) : "amount not captured";
 }
 
 function unappliedSentence(status: string, stripeObject: string): string {
@@ -247,7 +251,7 @@ function billTitle(bill: InvoiceBillView): string {
  * sheet's lines in the sheet's order, the receipt line included, then
  * "Pay online: {url}" last when a link exists. Nothing the sheet does not print.
  */
-function billText(bill: InvoiceBillView, farmName: string | null, receipt: string): string {
+function billText(bill: InvoiceBillView, farmName: string | null, receipt: string, symbol = "$", payBy: string | null = null): string {
   return [
     farmName,
     billTitle(bill),
@@ -258,13 +262,14 @@ function billText(bill: InvoiceBillView, farmName: string | null, receipt: strin
     `Harvest ${bill.harvestDate}${bill.deliveredOn != null ? ` · delivered ${bill.deliveredOn}` : ""}`,
     ...bill.orderLines.map(
       (line) =>
-        `${line.cropName} · ${line.trays} trays × ${cents(line.priceCentsPerTray)} = ${cents(line.lineTotalCents)}`,
+        `${line.cropName} · ${line.trays} trays × ${cents(line.priceCentsPerTray, symbol)} = ${cents(line.lineTotalCents, symbol)}`,
     ),
     bill.leftoverLine != null
       ? `Leftover ${bill.leftoverLine.cropName} · ${bill.leftoverLine.harvestedOn} · ${bill.leftoverLine.listedOz.toFixed(1)} oz`
       : null,
-    `Total ${cents(bill.totalCents)}`,
+    `Total ${cents(bill.totalCents, symbol)}`,
     bill.paidOn != null ? `Paid ${bill.paidOn}` : null,
+    payBy != null && payBy !== "" ? `Pay by: ${payBy}` : null,
     receipt,
     bill.paymentLinkUrl != null ? `Pay online: ${bill.paymentLinkUrl}` : null,
   ]
@@ -284,7 +289,7 @@ function billText(bill: InvoiceBillView, farmName: string | null, receipt: strin
  * money — it blocks the empty line and joins the count and the total.
  * Unpriced leftover carries no cents and never appears here.
  */
-function owedLine(o: OwedSummary | null): string {
+function owedLine(o: OwedSummary | null, symbol = "$"): string {
   if (o == null) return "Owed to you: not readable right now.";
   if (o.deliveries === 0 && o.leftoverCount === 0) return "Nothing owed to you.";
   const items: string[] = [];
@@ -299,7 +304,7 @@ function owedLine(o: OwedSummary | null): string {
     o.deliveries > 0 && o.totalCents == null ? null : (o.totalCents ?? 0) + o.leftoverCents;
   const what =
     totalCents != null
-      ? `Owed to you: ${cents(totalCents)} across ${across}`
+      ? `Owed to you: ${cents(totalCents, symbol)} across ${across}`
       : `Owed to you: ${across}, value partly unpriced`;
   const age =
     o.oldestDays == null
@@ -454,6 +459,12 @@ export function Money({
   // through farmDisplayName(), the same farm_config reader Settings uses.
   // One source: Money keeps no farm-name store and never writes the name.
   const [farmName, setFarmName] = useState<string | null>(null);
+  // GT-D26 WORLD-PAY: the farm currency the Connect sentence and the link line
+  // speak. Read-only here — Settings owns the write, the way it owns the name.
+  const [currency, setCurrency] = useState<FarmCurrencyView | null>(null);
+  // GT-D26 WORLD-PAY (ONRAMP B): the farmer's own how-to-pay line.
+  // Read-only here — Settings owns the write, the way it owns the name.
+  const [payInstructions, setPayInstructions] = useState<string | null>(null);
   // INTEGRITY-RECEIPT (STAMP A) — the last verify pass time H4 reported when
   // the bill was opened; null is "no pass to print", never a guess.
   const [verifyWhen, setVerifyWhen] = useState<string | null>(null);
@@ -532,7 +543,7 @@ export function Money({
   const orderRowRefs = useRef<Record<string, HTMLLIElement | null>>({});
 
   async function load() {
-    const [inRows, outRows, trail, cats, ws, retail, venueRows, cropRows, stageRows, unpriced, unappliedRows, owedRow, stripeRow, leftoverRows, farmNameRow] =
+    const [inRows, outRows, trail, cats, ws, retail, venueRows, cropRows, stageRows, unpriced, unappliedRows, owedRow, stripeRow, leftoverRows, farmNameRow, currencyRow, payRow] =
       await Promise.all([
         listIncome(),
         listExpenses(),
@@ -549,6 +560,8 @@ export function Money({
         moneyStatus(),
         listLeftoverListings(),
         farmDisplayName(),
+        farmCurrency(),
+        farmPayInstructions(),
       ]);
     setIncome(inRows);
     setExpenses(outRows);
@@ -560,6 +573,8 @@ export function Money({
     setStripeAccount(stripeRow);
     setLeftover(leftoverRows);
     setFarmName(farmNameRow);
+    setCurrency(currencyRow);
+    setPayInstructions(payRow);
     setRetailOrders(retail);
     setVenues(venueRows);
     setCrops(cropRows);
@@ -670,6 +685,9 @@ export function Money({
     setWriteOffReason("");
   }, [linkingIncomeId, linkOrderId]);
 
+  // GT-D26 WORLD-PAY: the printed link line names the code it was minted in.
+  // Before the view loads it reads exactly as the tree reads today.
+  const linkLabel = currency != null ? `Payment link (${currency.code.toUpperCase()})` : "Payment link";
   const cashIn = income.reduce((s, r) => s + r.amountCents, 0);
   const cashOut = expenses.reduce((s, r) => s + r.amountCents, 0);
   const liveWholesale = wholesale.filter((o) => o.state !== "voided");
@@ -1208,7 +1226,7 @@ export function Money({
     const linked = income.find((r) => r.incomeId === o.incomeEventId);
     const amountCents = linked?.amountCents ?? o.pricedTotalCents;
     if (amountCents == null || !o.paidOn) return;
-    const amount = cents(amountCents);
+    const amount = cents(amountCents, currency?.symbol ?? "$");
     const d = monthDayLabel(parseLocalDate(o.paidOn));
     const today = monthDayLabel(localToday());
     setBusy(true);
@@ -1418,7 +1436,7 @@ export function Money({
     if (invoiceBill == null || billReceipt == null) return;
     setError(null);
     try {
-      await navigator.clipboard.writeText(billText(invoiceBill, farmName, billReceipt));
+      await navigator.clipboard.writeText(billText(invoiceBill, farmName, billReceipt, currency?.symbol ?? "$", payInstructions));
       setBillCopiedFor(invoiceBill.number);
     } catch (e: unknown) {
       setError(errMessage(e), BILL_SHEET);
@@ -1430,7 +1448,7 @@ export function Money({
     try {
       const subject = encodeURIComponent(billTitle(invoiceBill));
       const body = encodeURIComponent(
-        billText(invoiceBill, farmName, billReceipt).replace(/\n/g, "\r\n"),
+        billText(invoiceBill, farmName, billReceipt, currency?.symbol ?? "$", payInstructions).replace(/\n/g, "\r\n"),
       );
       await openUrl(`mailto:?subject=${subject}&body=${body}`);
     } catch (e: unknown) {
@@ -1468,7 +1486,7 @@ export function Money({
                 </span>
               )}
               {o.pricedTotalCents != null ? (
-                <span className="order-first text-base font-semibold tabular-nums">{cents(o.pricedTotalCents)}</span>
+                <span className="order-first text-base font-semibold tabular-nums">{cents(o.pricedTotalCents, currency?.symbol ?? "$")}</span>
               ) : o.lines.some((l) => l.priceCentsPerTray != null) ? (
                 <span className="text-muted-foreground">partly unpriced</span>
               ) : null}
@@ -1557,7 +1575,7 @@ export function Money({
               )}
               {!SETTLED_STATES.has(o.state) && o.paymentLinkUrl != null && (
                 <div className="flex flex-col gap-1">
-                  <p className="text-sm break-all">Payment link: {o.paymentLinkUrl}</p>
+                  <p className="text-sm break-all">{linkLabel}: {o.paymentLinkUrl}</p>
                   <Button type="button" variant="outline" className="self-start text-sm" onClick={() => void onCopyLink(o)}>
                     {linkCopiedId === o.id ? "Copied" : "Copy"}
                   </Button>
@@ -1590,7 +1608,7 @@ export function Money({
               {reversingId === o.id && (() => {
                 const linked = income.find((r) => r.incomeId === o.incomeEventId);
                 const amountCents = linked?.amountCents ?? o.pricedTotalCents;
-                const amount = amountCents != null ? cents(amountCents) : "";
+                const amount = amountCents != null ? cents(amountCents, currency?.symbol ?? "$") : "";
                 const d = o.paidOn
                   ? monthDayLabel(parseLocalDate(o.paidOn))
                   : "";
@@ -1789,7 +1807,7 @@ export function Money({
       <section className="flex flex-col gap-2">
         {loaded || error != null ? (
           <>
-            <p className="text-3xl font-medium tabular-nums">{owedLine(owed)}</p>
+            <p className="text-3xl font-medium tabular-nums">{owedLine(owed, currency?.symbol ?? "$")}</p>
             {firstCollect != null ? (
               <button
                 type="button"
@@ -1798,7 +1816,7 @@ export function Money({
               >
                 Collect first: {firstCollect.venueName} —{" "}
                 {firstCollect.pricedTotalCents != null
-                  ? cents(firstCollect.pricedTotalCents)
+                  ? cents(firstCollect.pricedTotalCents, currency?.symbol ?? "$")
                   : "not priced yet"}
                 {firstCollect.deliveredAgeDays != null
                   ? `, ${deliveredUnpaidAge(firstCollect.deliveredAgeDays)}`
@@ -1881,7 +1899,7 @@ export function Money({
               </p>
               {invoiceBill.orderLines.map((line, i) => (
                 <p key={i} className="text-sm">
-                  {line.cropName} · {line.trays} trays × {cents(line.priceCentsPerTray)} = {cents(line.lineTotalCents)}
+                  {line.cropName} · {line.trays} trays × {cents(line.priceCentsPerTray, currency?.symbol ?? "$")} = {cents(line.lineTotalCents, currency?.symbol ?? "$")}
                 </p>
               ))}
               {invoiceBill.leftoverLine != null && (
@@ -1889,8 +1907,11 @@ export function Money({
                   Leftover {invoiceBill.leftoverLine.cropName} · {invoiceBill.leftoverLine.harvestedOn} · {invoiceBill.leftoverLine.listedOz.toFixed(1)} oz
                 </p>
               )}
-              <p className="text-base font-medium">Total {cents(invoiceBill.totalCents)}</p>
+              <p className="text-base font-medium">Total {cents(invoiceBill.totalCents, currency?.symbol ?? "$")}</p>
               {invoiceBill.paidOn != null && <p className="text-sm">Paid {invoiceBill.paidOn}</p>}
+              {payInstructions != null && payInstructions !== "" && (
+                <p className="text-sm">Pay by: {payInstructions}</p>
+              )}
               {invoiceBill.paymentLinkUrl != null && (
                 <p className="text-sm break-all text-muted-foreground">Pay online: {invoiceBill.paymentLinkUrl}</p>
               )}
@@ -2207,7 +2228,7 @@ export function Money({
                       total once — the same money span wholesale rows use. Unpriced
                       leftover invents no dollar from ounces. */}
                   {l.paidAt != null && l.pricedTotalCents != null && (
-                    <span className="order-first text-base font-semibold tabular-nums">{cents(l.pricedTotalCents)}</span>
+                    <span className="order-first text-base font-semibold tabular-nums">{cents(l.pricedTotalCents, currency?.symbol ?? "$")}</span>
                   )}
                   <Button
                     type="button"
@@ -2253,7 +2274,7 @@ export function Money({
                   )}
                   {l.paidAt == null && l.paymentLinkUrl != null && (
                     <div className="flex flex-col gap-2">
-                      <p className="text-sm break-all">Payment link: {l.paymentLinkUrl}</p>
+                      <p className="text-sm break-all">{linkLabel}: {l.paymentLinkUrl}</p>
                       <Button
                         type="button"
                         variant="outline"
@@ -2443,7 +2464,7 @@ export function Money({
           <CardTitle>Cash in</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <p className="text-3xl font-semibold tabular-nums">{cents(cashIn)}</p>
+          <p className="text-3xl font-semibold tabular-nums">{cents(cashIn, currency?.symbol ?? "$")}</p>
           <ul className="flex flex-col gap-2 text-sm">
             {(showAllIncome ? income : income.slice(0, INCOME_VISIBLE)).map((r) => {
               const applied = orderForIncome(r.incomeId);
@@ -2455,7 +2476,7 @@ export function Money({
               return (
                 <li key={r.incomeId} className="flex flex-col gap-2">
                   <span className="tabular-nums">
-                    {r.dateReceived} · {cents(r.amountCents)} · {r.source}
+                    {r.dateReceived} · {cents(r.amountCents, currency?.symbol ?? "$")} · {r.source}
                   </span>
                   {applied != null ? (
                     <span className="text-muted-foreground">
@@ -2488,7 +2509,7 @@ export function Money({
                             <option key={o.id} value={o.id}>
                               {o.venueName} · {o.harvestDate} ·{" "}
                               {o.pricedTotalCents != null
-                                ? cents(o.pricedTotalCents)
+                                ? cents(o.pricedTotalCents, currency?.symbol ?? "$")
                                 : "unpriced"}
                             </option>
                           ))}
@@ -2599,12 +2620,12 @@ export function Money({
           <CardTitle>Cash out</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <p className="text-3xl font-semibold tabular-nums">{cents(cashOut)}</p>
+          <p className="text-3xl font-semibold tabular-nums">{cents(cashOut, currency?.symbol ?? "$")}</p>
           <ul className="flex flex-col gap-3 text-sm">
             {(showAllExpenses ? expenses : expenses.slice(0, MONEY_LIST_VISIBLE)).map((r) => (
               <li key={r.eventId} className="flex flex-col gap-2">
                 <span className="tabular-nums">
-                  {r.datePaid} · {cents(r.amountCents)} · {r.payee}
+                  {r.datePaid} · {cents(r.amountCents, currency?.symbol ?? "$")} · {r.payee}
                 </span>
                 <div className="flex gap-3">
                   <button
@@ -2654,11 +2675,11 @@ export function Money({
                   {c.action} · {c.track} · {c.correctedAt}
                 </span>
                 <span className="text-muted-foreground">
-                  before {cents(c.beforeAmountCents)} on {c.beforeDate} ({c.beforePayee})
+                  before {cents(c.beforeAmountCents, currency?.symbol ?? "$")} on {c.beforeDate} ({c.beforePayee})
                 </span>
                 {c.afterAmountCents != null && c.afterDate && c.afterPayee != null ? (
                   <span className="text-muted-foreground">
-                    after {cents(c.afterAmountCents)} on {c.afterDate} ({c.afterPayee})
+                    after {cents(c.afterAmountCents, currency?.symbol ?? "$")} on {c.afterDate} ({c.afterPayee})
                   </span>
                 ) : (
                   <span className="text-muted-foreground">after — voided</span>
@@ -2700,7 +2721,7 @@ export function Money({
             {(showAllUnapplied ? unapplied : unapplied.slice(0, MONEY_LIST_VISIBLE)).map((f) => (
               <li key={f.eventId} className="flex flex-col gap-1">
                 <span className="tabular-nums">
-                  {observedDate(f.observedAt)} · {unappliedAmount(f.amountCents)} ·{" "}
+                  {observedDate(f.observedAt)} · {unappliedAmount(f.amountCents, currency?.symbol ?? "$")} ·{" "}
                   {unappliedSentence(f.status, f.stripeObject)}
                 </span>
                 <span className="text-muted-foreground">
@@ -2896,9 +2917,16 @@ export function Money({
                   Groundtruth accepts a test key or a live key. A live key moves real
                   money the first time a customer pays.
                 </p>
-                <p className="text-base text-muted-foreground">
-                  Every payment link Groundtruth mints is billed in US dollars.
-                </p>
+                {currency != null && (
+                  <>
+                    <p className="text-base text-muted-foreground">
+                      Every payment link Groundtruth mints is billed in {currency.name} ({currency.code.toUpperCase()}) — the farm currency on Settings.
+                    </p>
+                    <p className="text-base text-muted-foreground">
+                      If Stripe refuses that currency for your account, the mint refuses and nothing is written.
+                    </p>
+                  </>
+                )}
                 <label className="flex flex-col gap-2">
                   <span className="text-sm font-medium">Restricted key</span>
                   <input

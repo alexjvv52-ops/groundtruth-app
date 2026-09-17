@@ -414,8 +414,11 @@ pub fn validate_wholesale_event(event: &EventRecord) -> Result<(), String> {
             if p.amount_cents < 1 {
                 return Err("amount_cents must be at least 1".into());
             }
-            if p.currency != "usd" && p.currency != "cad" {
-                return Err("currency must be usd or cad (GT-D13-USD)".into());
+            if !crate::currency::is_sealed(&p.currency) {
+                return Err(format!(
+                    "currency must be one of: {} (GT-D26 WORLD-PAY)",
+                    crate::currency::sealed_codes_line()
+                ));
             }
             validate_calendar_date(&p.minted_on, "minted_on")?;
         }
@@ -1311,7 +1314,7 @@ pub fn mint_payment_link_with<G: crate::money::StripeGateway>(
         payment_link_url,
         client_reference: bill.client_reference,
         amount_cents: total,
-        currency: "usd".to_string(),
+        currency: minted.currency,
         minted_on,
     };
     let event = EventRecord::originated(

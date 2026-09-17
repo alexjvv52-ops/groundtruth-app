@@ -17,6 +17,7 @@ import type {
   Crop,
   DateReachability,
   ExportResult,
+  FarmCurrencyView,
   FarmLocation,
   ImportPlan,
   ImportResult,
@@ -1161,6 +1162,16 @@ export function farmDisplayName(): Promise<string | null> {
 export function setFarmDisplayName(name: string): Promise<string | null> {
   return invoke("set_farm_display_name", { name });
 }
+/** GT-D26 WORLD-PAY: the farm currency — config on farm_config, not an event. */
+export function farmCurrency(): Promise<FarmCurrencyView> {
+  return invoke("farm_currency");
+}
+export function setFarmCurrency(code: string): Promise<FarmCurrencyView> {
+  return invoke("set_farm_currency", { code });
+}
+/** GT-D26 WORLD-PAY (ONRAMP B): the farmer's own how-to-pay line — config on farm_config, not an event. */
+export function farmPayInstructions(): Promise<string | null> { return invoke("farm_pay_instructions"); }
+export function setFarmPayInstructions(text: string): Promise<string | null> { return invoke("set_farm_pay_instructions", { text }); }
 /** INV-A: render-only bills of a priced parent. Refusals verbatim. */
 export function wholesaleInvoiceBill(orderId: string): Promise<InvoiceBillView> {
   return invoke("wholesale_invoice_bill", { orderId });

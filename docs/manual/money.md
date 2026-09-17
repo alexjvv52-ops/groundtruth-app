@@ -3,6 +3,8 @@
 Money is the register: wholesale, leftover, cash in, cash out. It is
 not Books (Books is a lens on this same register). Unpaid stays
 unpaid. Unpriced stays unpriced. A payment link is not a payment.
+Every figure here, every bill and every payment link uses the farm
+currency set on Settings - changing it converts nothing.
 
 ## If something is wrong
 
@@ -21,6 +23,9 @@ unpaid. Unpriced stays unpriced. A payment link is not a payment.
 - Connect Stripe Continue is dead -> the Restricted key field is
   empty. A test key or a live key is accepted; a live key moves
   real money.
+- A Payment link refuses and names a currency -> Stripe will not take
+  the farm currency on that account. Nothing was written. Change Farm
+  currency on Settings or collect with **Paid…**.
 
 ## Doors on this tab
 
@@ -31,8 +36,8 @@ unpaid. Unpriced stays unpriced. A payment link is not a payment.
 - **Void** then **Confirm void** - `wholesale.voided`.
 - **Paid…** then **Save** / **Record anyway** - `income.received` and
   `wholesale.paid`; plus `wholesale.write_off` when you settle short.
-- **Payment link** - `wholesale.link_minted` - mints the link. Moves
-  no money.
+- **Payment link** - `wholesale.link_minted` - mints the link in the
+  farm currency and records that code. Moves no money.
 - **Copy** - writes nothing.
 - **Write off as bad debt** then **Write it off as bad debt** -
   `wholesale.bad_debt`. **Keep it owed** writes nothing.
@@ -48,6 +53,10 @@ Heading only. The converting taps are on the row.
 
 Writes nothing. The key is config on this machine, not an event.
 
+The sheet names the farm currency: every payment link Groundtruth
+mints is billed in it, and if Stripe refuses that currency for the
+account the mint refuses and nothing is written.
+
 - **Continue** - preview only.
 - **Connect this account** - stores the key.
 - **Use a different key** / **Cancel** - writes nothing.
@@ -57,6 +66,9 @@ Writes nothing. The key is config on this machine, not an event.
 ### Invoice bill
 
 - **Print** / **Close** - writes nothing.
+- Under **Total**: **Pay by:** and the How to pay line from Settings,
+  when one is saved. None saved, nothing printed. **Pay online:** and
+  the link follow when a link exists.
 
 ![Money, invoice](../images/money/money-invoice-creation.png)
 

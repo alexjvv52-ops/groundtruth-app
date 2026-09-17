@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type {
   AdminPhoneView,
   DockPortView,
+  FarmCurrencyView,
   PairingView,
   ScanConfigView,
 } from "@/farm/types";
@@ -10,9 +11,13 @@ import {
   dockPortStart,
   dockPortStatus,
   dockPortStop,
+  farmCurrency,
   farmLocation,
   farmDisplayName,
+  farmPayInstructions,
+  setFarmCurrency,
   setFarmDisplayName,
+  setFarmPayInstructions,
   pairAdminPhone,
   retireAdminPhone,
   scanConfig,
@@ -106,6 +111,136 @@ function FarmNameSection() {
           <p className="text-sm text-muted-foreground">Saved: {saved}</p>
         ) : (
           <p className="text-sm text-muted-foreground">No farm name saved yet.</p>
+        )}
+        {error != null && (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FarmCurrencySection() {
+  const [view, setView] = useState<FarmCurrencyView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void (async () => {
+      try {
+        setView(await farmCurrency());
+      } catch (e) {
+        setError(errMessage(e));
+      }
+    })();
+  }, []);
+  async function onPick(code: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      setView(await setFarmCurrency(code));
+    } catch (e) {
+      setError(errMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Farm currency</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">
+          The currency this farm prices in. Bills, the owed line, Books and every
+          payment link Groundtruth mints use it. Changing it converts nothing — a
+          12.50 stays 12.50.
+        </p>
+        <label className="flex flex-col gap-1 text-sm">
+          Farm currency
+          <select
+            className="h-12 rounded-md border border-input bg-card px-3"
+            value={view?.code ?? ""}
+            disabled={busy || view == null}
+            onChange={(e) => void onPick(e.target.value)}
+          >
+            {(view?.choices ?? []).map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.name} ({c.code.toUpperCase()})
+              </option>
+            ))}
+          </select>
+        </label>
+        {error != null && (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FarmPayInstructionsSection() {
+  const [name, setName] = useState("");
+  const [saved, setSaved] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const current = await farmPayInstructions();
+        setSaved(current);
+        setName(current ?? "");
+      } catch (e) {
+        setError(errMessage(e));
+      }
+    })();
+  }, []);
+  async function onSave() {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await setFarmPayInstructions(name);
+      setSaved(next);
+      setName(next ?? "");
+    } catch (e) {
+      setError(errMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>How to pay</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">
+          Printed under the total on every bill. Your own words: an M-Pesa till, a UPI ID, a PromptPay number, an IBAN, a PayShap ID.
+        </p>
+        <label className="flex flex-col gap-1 text-sm">
+          How to pay
+          <input
+            className="h-12 rounded-md border border-input bg-card px-3"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={120}
+          />
+        </label>
+        <Button
+          type="button"
+          className="h-12 self-start px-4 text-base active:translate-y-px"
+          disabled={busy}
+          onClick={() => void onSave()}
+        >
+          {busy ? "Saving…" : "Save how to pay"}
+        </Button>
+        {saved != null ? (
+          <p className="text-sm text-muted-foreground">Saved: {saved}</p>
+        ) : (
+          <p className="text-sm text-muted-foreground">No how-to-pay line saved yet.</p>
         )}
         {error != null && (
           <p className="text-sm text-destructive" role="alert">
@@ -654,6 +789,8 @@ export function Settings() {
         </CardContent>
       </Card>
       <FarmNameSection />
+      <FarmCurrencySection />
+      <FarmPayInstructionsSection />
       <FarmBackupSheet
         open={backupOpen}
         onOpenChange={setBackupOpen}

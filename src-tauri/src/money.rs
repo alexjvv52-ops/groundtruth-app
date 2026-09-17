@@ -82,6 +82,7 @@ pub struct OrderBill {
 pub struct MintedLink {
     pub link_id: String,
     pub url: String,
+    pub currency: String,
 }
 
 /// One Checkout Session line item, identified by Stripe Price id.
@@ -280,7 +281,7 @@ pub fn validate_restricted_key(key: &str) -> Result<&'static str, String> {
 pub fn preview_stripe_key(conn: &Connection, key: &str) -> Result<StripeAccountPreview, String> {
     let mode = validate_restricted_key(key)?;
     let key = key.trim();
-    let client = StripeClient::with_key(key, mode);
+    let client = StripeClient::with_key(key, mode, &crate::currency::farm_currency(conn)?);
     let account = client
         .account()
         .map_err(|e| stripe_client::redact_secrets(&e, key))?;
@@ -296,7 +297,7 @@ pub fn preview_stripe_key(conn: &Connection, key: &str) -> Result<StripeAccountP
 pub fn confirm_stripe_key(conn: &Connection, key: &str) -> Result<MoneyStatus, String> {
     let mode = validate_restricted_key(key)?;
     let key = key.trim();
-    let client = StripeClient::with_key(key, mode);
+    let client = StripeClient::with_key(key, mode, &crate::currency::farm_currency(conn)?);
     let account = client
         .account()
         .map_err(|e| stripe_client::redact_secrets(&e, key))?;
@@ -393,7 +394,8 @@ pub fn gateway_from_db(conn: &Connection) -> Result<StripeClient<stripe_client::
         .ok_or_else(|| STRIPE_NOT_CONNECTED_LINE.to_string())?;
     let mode = mode.unwrap_or_else(|| "test".to_string());
     validate_restricted_key(&key)?;
-    Ok(StripeClient::with_key(&key, &mode))
+    let currency = crate::currency::farm_currency(conn)?;
+    Ok(StripeClient::with_key(&key, &mode, &currency))
 }
 
 // --- Confirm-then-consume --------------------------------------------------
@@ -688,10 +690,10 @@ fn apply_paid_session_gated(
     })
 }
 
-/// GT-D13-USD (SEAL CAD-OR-USD): the mint bills usd; cad is history. A paid
-/// session in either currency reaches the cents check; any other is refused.
+/// GT-D26 WORLD-PAY: one seal. A paid session in a sealed currency reaches
+/// the cents check; any other is refused. `cad` stays sealed for history.
 fn link_currency_ok(currency: &str) -> bool {
-    currency.eq_ignore_ascii_case("usd") || currency.eq_ignore_ascii_case("cad")
+    crate::currency::is_sealed(currency)
 }
 
 /// TILL-A (GT-D22). Never inserts an orders row. Books cash only through
@@ -2116,8 +2118,8 @@ pub fn line_signature(lines: &[HarvestLinkLine]) -> String {
 
 fn format_money_amount(cents: i64, currency: &str) -> String {
     let dollars = (cents as f64) / 100.0;
-    if currency.eq_ignore_ascii_case("cad") || currency.eq_ignore_ascii_case("usd") {
-        format!("${dollars:.2}")
+    if crate::currency::is_sealed(currency) {
+        format!("{}{:.2}", crate::currency::symbol_for(currency), dollars)
     } else {
         format!("{dollars:.2} {}", currency.to_ascii_uppercase())
     }
@@ -2300,6 +2302,7 @@ pub mod fake {
             Ok(MintedLink {
                 link_id: format!("plink_fake_{}", bill.order_id),
                 url: format!("https://buy.stripe.com/test/wo/{}", bill.order_id),
+                currency: crate::currency::DEFAULT_CURRENCY.to_string(),
             })
         }
 

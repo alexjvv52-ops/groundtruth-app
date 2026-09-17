@@ -19,6 +19,12 @@ data outside the event log.
   is. Do not paste a host from memory.
 - You cannot find the farm folder -> **Open Backup & Export**, then
   **Open folder**. Do not search another Windows user.
+- Save how to pay refuses -> the line is longer than 120 characters,
+  or it holds `rk_` or `sk_`. A Stripe key is not a pay instruction.
+  Nothing was saved. Shorten the line or take the key out.
+- You changed Farm currency and no total moved -> correct. The code
+  changes; no number is converted. A link already minted keeps the
+  currency it was minted in.
 
 ## Doors on this tab
 
@@ -73,5 +79,19 @@ No door.
 - **Save farm name** - writes nothing - printed at the top of every
   invoice. Reference data on this machine, not an event. Empty means
   invoices refuse to show.
-
+### Farm currency
+- **Farm currency** - writes nothing - farm config on this machine,
+  not an event. Eight names, no others: US dollars (USD), Canadian
+  dollars (CAD), Euros (EUR), British pounds (GBP), South African
+  rand (ZAR), Indian rupees (INR), Kenyan shillings (KES), Thai
+  baht (THB). The pick sets what bills, the owed line, Books and
+  every new payment link speak. Changing it converts nothing - a
+  12.50 stays 12.50. A link already minted keeps its own currency.
+### How to pay
+- **How to pay** then **Save how to pay** - writes nothing - farm
+  config on this machine, not an event. One line in your own words -
+  an M-Pesa till, a UPI ID, a PromptPay number, an IBAN, a PayShap
+  ID - printed under the total on every bill. Empty saves nothing
+  and prints nothing. Longer than 120 characters is refused. A line
+  holding `rk_` or `sk_` is refused.
 ![Settings, Trust & Ownership](../images/settings/settings1.png)

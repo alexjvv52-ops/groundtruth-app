@@ -362,6 +362,18 @@ or a request body.
 
 ---
 
+## GT-D26 — WORLD-PAY: the farm currency lives on `farm_config`; new mints post it, minted events keep the code they carry
+
+**Decision.** Chosen 2026-09-15 by operator order (WORLD-PAY: LAW A · SCOPE B · STORE B · PRINT B · SEAL A · ZERODEC A · ONRAMP B · COPY FABLE), signed on the E lab tree; it reaches D only when E lands. Schema 44 → 45 adds two nullable columns to `farm_config` (v41): `currency` and `pay_instructions` — config class, one row, id = 1, written by Settings on the PC, never by an apply_*, declared on `projection::verify::EXCLUSION_LIST`. `src-tauri/src/currency.rs` owns the sealed list, and this chip seals two codes: `usd` and `cad`. NULL, blank, or a code this build is not sealed for reads `usd`, so no farm changes the currency it mints in by upgrading. `money::gateway_from_db` reads the farm currency and hands it to the Stripe client; both mint posts in `stripe_client.rs` send that field instead of the `usd` literal, `MintedLink` returns the code it posted, the `wholesale.link_minted` and `leftover.link_minted` payloads record that code instead of a literal, and the cart page carries it as a data attribute. Both seals and the poll's link gate run through one `is_sealed`. This names and supersedes two clauses of GT-D13-USD and nothing else of it: "A per-farm currency ... or a currency that arrives by setting, checkbox" and "There is no farm currency column and no currency picker". The rest of GT-D13-USD stands — no exchange rate, no second mint currency, and no currency by environment variable, request parameter, deploy variable or flag file.
+
+**Forbids.** An exchange rate or any conversion: a farm that priced in CAD does not grow a USD number because Settings moved. A currency that arrives by environment variable, request parameter, deploy variable, request body or flag file. A second currency store, a currency Kind, or a currency on a payload that does not already carry one. A code the desk's printers cannot speak — the sealed list is append-only and widens only by a signed job. Zero-decimal codes (`krw`, `vnd`) until the minor-unit encoding is signed. Rewriting a historic `cad` row into `usd`.
+
+**Prevents.** A grower outside the United States minting links their customers cannot pay, and the silent opposite — a desk that says one currency while its links bill another. GT-D13-USD's real guarantee holds: the currency a farm mints in still cannot be changed by anyone who can edit a settings file, a deploy variable or a request body. It moves at the farm's own Settings, and only to a code this build is sealed for.
+
+**Signed** 2026-09-15 (operator, WORLD-PAY: LAW A · SCOPE B · STORE B · PRINT B · SEAL A · ZERODEC A · ONRAMP B · COPY FABLE; J1 PRESENTMENT-STORE).
+
+---
+
 ## GT-D14 — The wholesale door: four order-book kinds, one money register, one capacity pool
 
 **Decision.** Four register-domain kinds are admitted for the wholesale order

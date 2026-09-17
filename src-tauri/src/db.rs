@@ -11,7 +11,7 @@ pub struct FarmPaths {
     pub snapshots_dir: PathBuf,
 }
 
-pub const SCHEMA_VERSION: i32 = 44;
+pub const SCHEMA_VERSION: i32 = 45;
 
 /// Frozen tray id seeded into `open_v1_in_memory` (Phase 1 Ruling 2).
 #[cfg(test)]
@@ -1041,6 +1041,14 @@ fn mkt_samples_has_column(conn: &Connection, column: &str) -> Result<bool, Strin
 fn leftover_listings_has_column(conn: &Connection, column: &str) -> Result<bool, String> {
     let mut stmt = conn
         .prepare("SELECT 1 FROM pragma_table_info('leftover_listings') WHERE name = ?1")
+        .map_err(|e| e.to_string())?;
+    let found = stmt.exists(params![column]).map_err(|e| e.to_string())?;
+    Ok(found)
+}
+
+fn farm_config_has_column(conn: &Connection, column: &str) -> Result<bool, String> {
+    let mut stmt = conn
+        .prepare("SELECT 1 FROM pragma_table_info('farm_config') WHERE name = ?1")
         .map_err(|e| e.to_string())?;
     let found = stmt.exists(params![column]).map_err(|e| e.to_string())?;
     Ok(found)
@@ -2245,6 +2253,26 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
         conn.pragma_update(None, "user_version", 44)
             .map_err(|e| e.to_string())?;
         version = 44;
+    }
+    if version < 45 {
+        // GT-D26 WORLD-PAY (J1 PRESENTMENT-STORE): the farm currency every new
+        // mint is billed in, and the farmer's own how-to-pay line, join
+        // farm_config (v41) — config class, one row, written by Settings on the
+        // PC, never by an apply_*; declared on projection::verify::EXCLUSION_LIST.
+        // No Kind changes, so the event_log triggers are not reinstalled (v42).
+        // Idempotent ALTERs: open_in_memory fixtures rewind user_version after a
+        // current-schema open, so these columns may already exist (the v40 shape).
+        if !farm_config_has_column(conn, "currency")? {
+            conn.execute_batch("ALTER TABLE farm_config ADD COLUMN currency TEXT;")
+                .map_err(|e| e.to_string())?;
+        }
+        if !farm_config_has_column(conn, "pay_instructions")? {
+            conn.execute_batch("ALTER TABLE farm_config ADD COLUMN pay_instructions TEXT;")
+                .map_err(|e| e.to_string())?;
+        }
+        conn.pragma_update(None, "user_version", 45)
+            .map_err(|e| e.to_string())?;
+        version = 45;
     }
     if version > SCHEMA_VERSION {
         return Err(format!(

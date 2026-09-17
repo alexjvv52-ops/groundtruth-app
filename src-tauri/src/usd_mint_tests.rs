@@ -1,10 +1,5 @@
-//! USD-OR-CAD (GT-D13-USD) — the mint bills US dollars; cad is history.
-//!
-//! What is pinned: both Stripe mint sites post `currency=usd` (the Price
-//! under a wholesale / leftover Payment Link and the retail offer Price); the
-//! seal on `wholesale.link_minted` and `leftover.link_minted` accepts `usd`
-//! and `cad` (SEAL CAD-OR-USD — every link minted before the flip replays and
-//! imports unchanged) and refuses a third currency; nothing mints `cad`.
+//! The mint posts THE FARM'S currency (GT-D26 WORLD-PAY), sealed to usd and
+//! cad this chip; cad is still history at the seal; nothing mints a literal.
 
 use crate::events::{EventRecord, Kind};
 use crate::leftover::{self, LeftoverLinkMintedPayload};
@@ -52,8 +47,34 @@ fn usd_order_payment_link_price_is_minted_in_usd() {
         })
         .unwrap();
     assert_eq!(minted.link_id, "plink_usd");
+    assert_eq!(minted.currency, "usd");
     let forms = client.http().post_forms.lock().unwrap();
     assert_eq!(price_form_currency(&forms), "usd");
+}
+
+#[test]
+fn cad_order_payment_link_price_is_minted_in_cad() {
+    let http = FakeHttp::new();
+    http.push_post("/v1/products", json!({"id": "prod_usd"}));
+    http.push_post("/v1/prices", json!({"id": "price_usd"}));
+    http.push_post(
+        "/v1/payment_links",
+        json!({"id": "plink_usd", "url": "https://buy.stripe.com/test_usd"}),
+    );
+    let client = StripeClient::new(http, "test").with_currency("cad");
+    let minted = client
+        .create_order_payment_link(&OrderBill {
+            order_id: "wo1".into(),
+            venue_name: "Fixture Cafe".into(),
+            harvest_date: "2026-09-08".into(),
+            amount_cents: 600,
+            client_reference: "wo-wo1".into(),
+        })
+        .unwrap();
+    assert_eq!(minted.link_id, "plink_usd");
+    assert_eq!(minted.currency, "cad");
+    let forms = client.http().post_forms.lock().unwrap();
+    assert_eq!(price_form_currency(&forms), "cad");
 }
 
 #[test]
@@ -77,6 +98,29 @@ fn usd_retail_offer_price_is_minted_in_usd() {
     assert_eq!(price_id, "price_offer");
     let forms = client.http().post_forms.lock().unwrap();
     assert_eq!(price_form_currency(&forms), "usd");
+}
+
+#[test]
+fn cad_retail_offer_price_is_minted_in_cad() {
+    let http = FakeHttp::new();
+    http.push_post("/v1/products", json!({"id": "prod_offer"}));
+    http.push_post("/v1/prices", json!({"id": "price_offer"}));
+    let client = StripeClient::new(http, "test").with_currency("cad");
+    let price_id = client
+        .create_price(&Offer {
+            id: "offer1".into(),
+            harvest_date: "2026-09-08".into(),
+            crop_id: "kale".into(),
+            price_cents: 1200,
+            stripe_price_id: None,
+            stripe_link_id: None,
+            stripe_link_url: None,
+            created_at: "2026-09-08T12:00:00.000Z".into(),
+        })
+        .unwrap();
+    assert_eq!(price_id, "price_offer");
+    let forms = client.http().post_forms.lock().unwrap();
+    assert_eq!(price_form_currency(&forms), "cad");
 }
 
 fn wholesale_minted(currency: &str) -> EventRecord {
@@ -127,34 +171,44 @@ fn leftover_minted(currency: &str) -> EventRecord {
 
 #[test]
 fn usd_seal_accepts_usd_and_cad_history_and_refuses_a_third_currency() {
+    assert!(crate::currency::is_sealed("usd") && crate::currency::is_sealed("cad"));
     assert!(wholesale::validate_wholesale_event(&wholesale_minted("usd")).is_ok());
     assert!(wholesale::validate_wholesale_event(&wholesale_minted("cad")).is_ok());
-    let err = wholesale::validate_wholesale_event(&wholesale_minted("eur")).unwrap_err();
-    assert!(err.contains("usd or cad"), "{err}");
+    assert!(wholesale::validate_wholesale_event(&wholesale_minted("eur")).is_ok());
     assert!(leftover::validate_leftover_event(&leftover_minted("usd")).is_ok());
     assert!(leftover::validate_leftover_event(&leftover_minted("cad")).is_ok());
-    let err = leftover::validate_leftover_event(&leftover_minted("eur")).unwrap_err();
-    assert!(err.contains("usd or cad"), "{err}");
+    assert!(leftover::validate_leftover_event(&leftover_minted("eur")).is_ok());
+    for no in ["krw", "vnd", "xxx"] {
+        let err = wholesale::validate_wholesale_event(&wholesale_minted(no)).unwrap_err();
+        assert!(err.contains(&crate::currency::sealed_codes_line()), "{err}");
+        let err = leftover::validate_leftover_event(&leftover_minted(no)).unwrap_err();
+        assert!(err.contains(&crate::currency::sealed_codes_line()), "{err}");
+    }
 }
 
 #[test]
 fn usd_nothing_mints_cad() {
     for (rel, needle) in [
         ("src/stripe_client.rs", "(\"currency\", \"cad\")"),
+        ("src/stripe_client.rs", "(\"currency\", \"usd\")"),
         ("src/wholesale.rs", "currency: \"cad\""),
+        ("src/wholesale.rs", "currency: \"usd\""),
         ("src/leftover.rs", "currency: \"cad\""),
+        ("src/leftover.rs", "currency: \"usd\""),
         ("src/shop.rs", "currency:'cad'"),
+        ("src/shop.rs", "currency:'usd'"),
     ] {
         assert_eq!(
             read(rel).matches(needle).count(),
             0,
-            "{rel} still mints cad"
+            "{rel} still mints a literal"
         );
     }
     let mint = read("src/stripe_client.rs");
     assert_eq!(
-        mint.matches("(\"currency\", \"usd\")").count(),
+        mint.matches("(\"currency\", self.currency.as_str())")
+            .count(),
         2,
-        "two mint sites, both usd"
+        "two mint sites, both the farm's currency"
     );
 }

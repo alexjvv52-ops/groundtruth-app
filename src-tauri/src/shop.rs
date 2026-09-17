@@ -48,7 +48,8 @@ pub fn generate_shop_page_with<G: money::StripeGateway>(
         .map(|n| n.trim().to_string())
         .filter(|n| !n.is_empty());
     let title = farm_name.as_deref().unwrap_or(SHOP_UNNAMED_TITLE);
-    let html = render_html(&listings, &as_of, &checkout_url, title);
+    let currency = crate::currency::farm_currency(conn)?;
+    let html = render_html(&listings, &as_of, &checkout_url, title, &currency);
 
     let bytes = html.as_bytes();
     if bytes.len() >= 100 * 1024 {
@@ -136,17 +137,33 @@ fn esc(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-fn format_price_cad(cents: i64) -> String {
+fn format_price(cents: i64, currency: &str) -> String {
     let dollars = cents / 100;
     let rem = (cents % 100).abs();
-    format!("${dollars}.{rem:02}")
+    if crate::currency::is_sealed(currency) {
+        format!(
+            "{}{dollars}.{rem:02}",
+            crate::currency::symbol_for(currency)
+        )
+    } else {
+        format!("{dollars}.{rem:02} {}", currency.to_ascii_uppercase())
+    }
+}
+fn format_price_cad(cents: i64) -> String {
+    format_price(cents, crate::currency::DEFAULT_CURRENCY)
 }
 
 /// C1 — the cart page's title when Settings has no farm name yet. Never a
 /// brand: the page carries the operator's own name or nothing at all.
 const SHOP_UNNAMED_TITLE: &str = "Shop";
 
-fn render_html(listings: &[OfferView], as_of: &str, checkout_url: &str, title: &str) -> String {
+fn render_html(
+    listings: &[OfferView],
+    as_of: &str,
+    checkout_url: &str,
+    title: &str,
+    currency: &str,
+) -> String {
     let next_date = listings
         .first()
         .map(|o| o.harvest_date.as_str())
@@ -167,7 +184,7 @@ fn render_html(listings: &[OfferView], as_of: &str, checkout_url: &str, title: &
             continue;
         };
         let cents = offer.price_cents.unwrap_or(0);
-        let price = format_price_cad(cents);
+        let price = format_price(cents, currency);
         items_html.push_str(&format!(
             r#"<div class="item" data-price-id="{price_id}" data-price-cents="{cents}" data-remaining="{rem}" data-available="{avail}" data-sold="{sold}">
   <div class="row">
@@ -204,10 +221,12 @@ fn render_html(listings: &[OfferView], as_of: &str, checkout_url: &str, title: &
     let pay_block = if next_date.is_empty() || idx == 0 {
         r#"<p class="muted">Nothing available to buy right now.</p>"#.to_string()
     } else {
-        r#"<div class="total-row">Total <strong id="total">$0.00</strong></div>
+        format!(
+            r#"<div class="total-row">Total <strong id="total">{zero}</strong></div>
 <button type="button" class="pay" id="pay" disabled>Pay</button>
-<p class="err" id="err" hidden></p>"#
-            .to_string()
+<p class="err" id="err" hidden></p>"#,
+            zero = format_price(0, currency),
+        )
     };
 
     // Vanilla JS only. Reference minted per Pay attempt so cancel-and-retry gets a new Session.
@@ -217,12 +236,16 @@ fn render_html(listings: &[OfferView], as_of: &str, checkout_url: &str, title: &
   if(!root)return;
   var endpoint=root.getAttribute('data-checkout');
   var harvest=root.getAttribute('data-harvest');
+  var currency=root.getAttribute('data-currency');
   var items=[].slice.call(document.querySelectorAll('.item[data-price-id]'));
   var totalEl=document.getElementById('total');
   var pay=document.getElementById('pay');
   var err=document.getElementById('err');
   var busy=false;
-  function money(c){return '$'+(c/100).toFixed(2);}
+  var SYMBOLS={usd:'$',cad:'$',eur:'€',gbp:'£',zar:'R',inr:'₹',kes:'KSh',thb:'฿'};
+  var symbol=SYMBOLS[(currency||'').toLowerCase()]||'';
+  function money(c){var n=(c/100).toFixed(2);
+    return symbol?symbol+n:n+' '+(currency||'').toUpperCase();}
   function readCart(){
     var lines=[],total=0;
     items.forEach(function(el){
@@ -271,7 +294,7 @@ fn render_html(listings: &[OfferView], as_of: &str, checkout_url: &str, title: &
         body:JSON.stringify({
           reference:reference,
           harvestDate:harvest,
-          currency:'usd',
+          currency:currency,
           total:c.total,
           lines:c.lines
         })
@@ -328,7 +351,7 @@ h1{{font-size:1.55rem;font-weight:650;margin:0 0 .75rem;letter-spacing:-.02em}}
 </style>
 </head>
 <body>
-<main id="cart" data-checkout="{checkout}" data-harvest="{harvest}">
+<main id="cart" data-checkout="{checkout}" data-harvest="{harvest}" data-currency="{currency}">
 <h1>{ready}</h1>
 <div id="items">
 {items}
@@ -351,6 +374,7 @@ h1{{font-size:1.55rem;font-weight:650;margin:0 0 .75rem;letter-spacing:-.02em}}
         as_of = esc(as_of),
         checkout = checkout_attr,
         harvest = harvest_attr,
+        currency = esc(currency),
         script = if idx == 0 { "" } else { script },
         title = esc(title),
     )

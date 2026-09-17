@@ -286,10 +286,10 @@ pub fn validate_leftover_event(event: &EventRecord) -> Result<(), String> {
             if p.priced_total_cents <= 0 {
                 return Err("leftover.link_minted priced_total_cents must be > 0".into());
             }
-            let currency = p.currency.to_ascii_lowercase();
-            if currency != "usd" && currency != "cad" {
+            if !crate::currency::is_sealed(&p.currency) {
                 return Err(format!(
-                    "leftover.link_minted currency must be usd or cad, got {}",
+                    "leftover.link_minted currency must be one of: {}, got {} (GT-D26 WORLD-PAY)",
+                    crate::currency::sealed_codes_line(),
                     p.currency
                 ));
             }
@@ -486,7 +486,7 @@ pub fn mint_payment_link_with<G: crate::money::StripeGateway>(
         payment_link_url,
         client_reference: bill.client_reference,
         priced_total_cents: price_cents,
-        currency: "usd".to_string(),
+        currency: minted.currency,
         minted_on,
     };
     let event = EventRecord::originated(

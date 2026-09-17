@@ -331,6 +331,38 @@ pub fn set_farm_display_name(state: State<'_, Db>, name: String) -> Result<Optio
     crate::invoice::set_farm_display_name(&conn, &name)
 }
 
+/// GT-D26 WORLD-PAY: the farm currency new mints are billed in. Config, not a Kind.
+#[tauri::command]
+pub fn farm_currency(state: State<'_, Db>) -> Result<crate::currency::FarmCurrencyView, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    crate::currency::farm_currency_view(&conn)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn set_farm_currency(
+    state: State<'_, Db>,
+    code: String,
+) -> Result<crate::currency::FarmCurrencyView, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    crate::currency::set_farm_currency(&conn, &code)
+}
+
+/// GT-D26 WORLD-PAY (ONRAMP B): the farmer's own how-to-pay line. Config, not a Kind.
+#[tauri::command]
+pub fn farm_pay_instructions(state: State<'_, Db>) -> Result<Option<String>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    crate::currency::farm_pay_instructions(&conn)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn set_farm_pay_instructions(
+    state: State<'_, Db>,
+    text: String,
+) -> Result<Option<String>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    crate::currency::set_farm_pay_instructions(&conn, &text)
+}
+
 /// INV-A: render-only bills. Refusals are the invoice sentences, verbatim.
 #[tauri::command(rename_all = "camelCase")]
 pub fn wholesale_invoice_bill(

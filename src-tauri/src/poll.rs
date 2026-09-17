@@ -277,8 +277,8 @@ fn raise_unrecognised_session(conn: &Connection, u: &UnparsedSession) -> Result<
 
 fn format_money_amount(cents: i64, currency: &str) -> String {
     let dollars = (cents as f64) / 100.0;
-    if currency.eq_ignore_ascii_case("cad") || currency.eq_ignore_ascii_case("usd") {
-        format!("${dollars:.2}")
+    if crate::currency::is_sealed(currency) {
+        format!("{}{:.2}", crate::currency::symbol_for(currency), dollars)
     } else {
         format!("{dollars:.2} {}", currency.to_ascii_uppercase())
     }

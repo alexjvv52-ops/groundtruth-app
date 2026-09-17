@@ -672,7 +672,8 @@ fn phase2_schema_version_10_payload_keys_unchanged() {
     // Bumped for R-10 RF-PI (schema v42). Cost payload keys re-checked; unchanged.
     // Bumped for SEED-A (GT-D25, schema v43). Cost payload keys re-checked; unchanged.
     // Bumped for J4 REF-DUP-FACT (schema v44). Cost payload keys re-checked; unchanged.
-    assert_eq!(db::SCHEMA_VERSION, 44);
+    // Bumped for GT-D26 WORLD-PAY (schema v45). Cost payload keys re-checked; unchanged.
+    assert_eq!(db::SCHEMA_VERSION, 45);
     assert_eq!(COST_EVENT_PAYLOAD_KEYS, &expected);
 }
 

@@ -15,11 +15,11 @@ export function parseDollarsToCents(raw: string): number | null {
   return total;
 }
 
-/** Format integer cents as `$X.YY`. */
-export function formatCents(cents: number): string {
+/** Format integer cents as `<symbol>X.YY`. Default symbol keeps `$`. */
+export function formatCents(cents: number, symbol = "$"): string {
   const sign = cents < 0 ? "-" : "";
   const abs = Math.abs(cents);
   const dollars = Math.floor(abs / 100);
   const rem = abs % 100;
-  return `${sign}$${dollars}.${String(rem).padStart(2, "0")}`;
+  return `${sign}${symbol}${dollars}.${String(rem).padStart(2, "0")}`;
 }
