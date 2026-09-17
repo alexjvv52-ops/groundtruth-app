@@ -21,8 +21,7 @@ front door is the root `README.md`.
 - `architecture/` — the shape of the system in one page: one writer, one event log, computed truth surfaces.
 - `export-and-exit/` — the exit tax is zero. What export produces, what restore refuses, and why snapshots are not a backup.
 ## Working material
-- `_raw/` — the unedited project record this pack was written from: signed decisions, audits, briefs, and working notes. It is kept as evidence, not as documentation. Nothing in it is required reading.
-- `_SANITIZE-MANIFEST.md` — the classification of every file in `_raw/` (paths are relative to `_raw/`), with the tag each file received before this pack was written.
+- `_raw/` — the private working record this pack was written from (signed decisions, audits, briefs, working notes). It stays with the operator and is not published in this repository.
 ## Two rules for reading
 1. If a page here disagrees with a signed decision in `_raw/`, the signed decision wins until it is re-signed. The pages interpret; they do not outrank.
 2. If a page here disagrees with the running application, the application is the fact and the page is the defect. Report it.
