@@ -30,6 +30,10 @@ large card; the rest sit as cards. Receipts sort below every live row.
 
 ## Doors on this tab
 
+- The rack (strip under the title) - writes nothing - one cell per
+  live tray, dark under lights, grey in blackout, hollow up to the
+  shelf ceiling from Settings › Shelf space. "ceiling not set" means
+  Light and Blackout slots are blank there. ▸ opens the rows.
 - **Collect** - writes nothing - opens Money on that unpaid row.
 - **Deliver** - writes nothing - opens Money on that ordered row.
 - **Sow** - `tray.sown` and `consumption.physical` (seed ounces only
