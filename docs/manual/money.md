@@ -71,6 +71,10 @@ link already minted keeps the code it was minted in.
 ### Invoice bill
 
 - **Print** / **Close** - writes nothing.
+- **Copy bill** - writes nothing - the bill as text on the clipboard,
+  Pay by: and Pay online: included when set.
+- **Email bill** - writes nothing - opens your mail app with the bill
+  as the body; you type the address.
 - Under **Total**: **Pay by:** and the How to pay line from Settings,
   when one is saved. None saved, nothing printed. **Pay online:** and
   the link follow when a link exists.
@@ -80,6 +84,8 @@ link already minted keeps the code it was minted in.
 ### New order
 
 - **Same as last order** - writes nothing - fills the draft.
+- **From standing** - writes nothing - drafts this week's lines from
+  the venue's standing; edit anything, then Record order writes.
 - **Add variety** - writes nothing.
 - **Record order** / **Record anyway** - `wholesale.ordered`.
 

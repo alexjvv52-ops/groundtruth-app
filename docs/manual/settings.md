@@ -58,7 +58,10 @@ No door.
 ### Dock
 
 - **Start** / **Stop** - writes nothing - the local dock process.
-- This address is not encrypted. Use it only on Wi-Fi you trust.
+  While running the card prints the address
+  (`http://<this PC on your Wi-Fi>:18765`) and a QR of it; scan it on
+  the phone. This address is not encrypted. Use it only on Wi-Fi you
+  trust.
 
 ### Connections
 
@@ -81,6 +84,7 @@ No door.
 - **Save farm name** - writes nothing - printed at the top of every
   invoice. Reference data on this machine, not an event. Empty means
   invoices refuse to show.
+
 ### Farm currency
 - **Farm currency** - writes nothing - farm config on this machine,
   not an event. Eight names, no others: US dollars (USD), Canadian
@@ -89,6 +93,7 @@ No door.
   baht (THB). The pick sets what bills, the owed line, Books and
   every new payment link speak. Changing it converts nothing - a
   12.50 stays 12.50. A link already minted keeps its own currency.
+
 ### Units
 - **Units** - writes nothing - farm config on this machine, not an
   event. The units this desk prints weights in. Harvest receipts,
@@ -96,6 +101,7 @@ No door.
   ounces and stay that way — changing this rewrites nothing. A
   harvest weighed at 12.0 oz stays 12.0 oz in the file and prints as
   340 g.
+
 ### How to pay
 - **How to pay** then **Save how to pay** - writes nothing - farm
   config on this machine, not an event. One line in your own words -
@@ -103,4 +109,5 @@ No door.
   ID - printed under the total on every bill. Empty saves nothing
   and prints nothing. Longer than 120 characters is refused. A line
   holding `rk_` or `sk_` is refused.
+
 ![Settings, Trust & Ownership](../images/settings/settings1.png)

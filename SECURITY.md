@@ -4,8 +4,8 @@
 
 | Version | Supported |
 | ------- | --------- |
-| 0.1.3 — the release marked **Latest** | yes |
-| 0.1.2, 0.1.1, v0.1.0 and anything older | no — install the latest release |
+| 0.1.4 — the release marked **Latest** | yes |
+| 0.1.3, 0.1.2, 0.1.1, v0.1.0 and anything older | no — install the latest release |
 
 ## Reporting a vulnerability
 

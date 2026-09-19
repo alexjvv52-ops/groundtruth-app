@@ -39,7 +39,7 @@ is the only phone write; the phone itself writes nothing.
   under-light lines. The write is **Move to light** on Today.
 - **−** / **+** (phone-capture Edit) - writes nothing - draft only.
 - **Accept** - writes nothing - marks the row for **Confirm**.
-- **Edit** - writes nothing - shows the draft count and ounces.
+- **Edit** - writes nothing - shows the draft count and weight, in the farm units.
 - **Discard** - `phone.proposal_decided` - the proposal is refused.
 - **Accept all** - writes nothing - Accept on every pending row.
 - **Confirm** - `phone.proposal_decided` plus `trays.advanced` or

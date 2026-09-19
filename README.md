@@ -46,6 +46,7 @@ in plain words, when the data cannot support an answer.
 
 - **Today** — one screen that says what is due: move trays to light,
   harvest (by real weight), sow, log money out, log miles. One-step Undo.
+  Weights print in ounces or grams — your pick on Settings › Units — while the record itself is kept in ounces and never rewritten.
 - **Count the shelf** — when the app and the shelf disagree, the shelf
   wins, on the record.
 - **Money** — money in, money out with receipt attachments and tax-line
@@ -128,6 +129,7 @@ Everything lives in one folder on your machine:
 `%APPDATA%\com.prairieroots.groundtruth` — the database, the append-only
 log of everything that ever happened, your receipts, and automatic
 snapshots taken every launch and every close.
+Installing a newer Groundtruth over an older one keeps your farm: the first open upgrades the farm file in place, and an older build will then refuse to open it — copy the folder before you upgrade.
 
 Snapshots are not a backup. They live on the same disk they protect. Copy
 the folder to a USB stick or your own cloud folder on a schedule you
@@ -155,7 +157,7 @@ After a restore, the app rebuilds the log to match the database and archives
 the old log read-only.
 Honest limit: this is a one-operator desk. "Who" is the person at this PC —
 there are no logins or per-person stamps — and the export is not a signed
-inspection pack. Details: `docs/manual/integrity.md`.
+inspection pack. Details: [docs/manual/integrity.md](docs/manual/integrity.md).
 
 ## How mature is this?
 
@@ -168,8 +170,8 @@ any move.
 
 ## Deeper docs
 
-- `docs/OPERATOR-MANUAL.md` — the full manual, in plain language.
-- `docs/GT-D-SERIES.md` — every structural decision and the failure it
+- [docs/OPERATOR-MANUAL.md](docs/OPERATOR-MANUAL.md) — the full manual, in plain language.
+- [docs/GT-D-SERIES.md](docs/GT-D-SERIES.md) — every structural decision and the failure it
   prevents. This project writes down its "why".
 
 License: Apache-2.0.

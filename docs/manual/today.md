@@ -15,7 +15,7 @@ large card; the rest sit as cards. Receipts sort below every live row.
 - A collect card is gone but the owed line still names a delivery ->
   you tapped **Not today**. That is one day. Do not mark it Paid on
   Money to hide it.
-- The harvest receipt asks leftover ounces and you already listed them
+- The harvest receipt asks the leftover weight and you already listed them
   on Money -> do not press **List leftover** again. One listing per
   crop-day.
 - Phone captures sit here and on Farm -> **Accept** here confirms as
@@ -30,6 +30,10 @@ large card; the rest sit as cards. Receipts sort below every live row.
 
 ## Doors on this tab
 
+- The rack (strip under the title) - writes nothing - one cell per
+  live tray, dark under lights, grey in blackout, hollow up to the
+  shelf ceiling from Settings › Shelf space. "ceiling not set" means
+  Light and Blackout slots are blank there. ▸ opens the rows.
 - **Collect** - writes nothing - opens Money on that unpaid row.
 - **Deliver** - writes nothing - opens Money on that ordered row.
 - **Sow** - `tray.sown` and `consumption.physical` (seed ounces only
