@@ -19,6 +19,7 @@ use crate::leftover;
 use crate::money::{self, fake::FakeGateway};
 use crate::shop::{self, SHOP_DOOR_AVAILABILITY_TAIL, SHOP_DOOR_EMPTY_LINE};
 use crate::trays;
+use crate::units;
 use rusqlite::Connection;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -168,7 +169,7 @@ fn shop_door_one_unpaid_minted_lot_prints_the_money_row_and_the_stored_url() {
     let (written, html) = page(&conn, &dir);
     assert_eq!(written.harvest_dates, vec![today()]);
     // The Money row's words: crop, harvested day, listed ounces, price.
-    let row = format!("Kale · harvested {} · 2.0 oz · $7.00", today());
+    let row = format!("Kale · harvested {} · 2.0 oz · $7.00 · USD", today());
     assert_eq!(html.matches(&row).count(), 1, "{html}");
     // The stored URL, byte for byte, as the link and as its text.
     let pay = format!(r#"Pay online: <a href="{url}">{url}</a>"#);
@@ -219,8 +220,8 @@ fn shop_door_two_lots_print_one_row_each_in_the_readers_order() {
             .count(),
         2
     );
-    assert!(html.contains("· 2.0 oz · $5.00"));
-    assert!(html.contains("· 2.0 oz · $7.00"));
+    assert!(html.contains("· 2.0 oz · $5.00 · USD"));
+    assert!(html.contains("· 2.0 oz · $7.00 · USD"));
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -375,4 +376,26 @@ fn shop_door_desk_wiring_exists_once_and_the_sheet_stays_unmounted() {
         importers.is_empty(),
         "SellOnlineSheet importers: {importers:?}"
     );
+}
+
+#[test]
+fn shop_door_metric_farm_prints_grams_and_keeps_ounces_on_the_book() {
+    let mut conn = mem();
+    set_name(&conn);
+    units::set_farm_units(&conn, "metric").unwrap();
+    let lot = minted(&mut conn, "kale", 700);
+    let dir = temp_dir("metric");
+    let (_, html) = page(&conn, &dir);
+    let row = format!("Kale · harvested {} · 57 g · $7.00 · USD", today());
+    assert_eq!(html.matches(&row).count(), 1, "{html}");
+    assert!(!html.contains("2.0 oz"), "{html}");
+    let listed: f64 = conn
+        .query_row(
+            "SELECT listed_oz FROM leftover_listings WHERE listing_id = ?1",
+            [&lot.listing_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(listed, 2.0);
+    let _ = fs::remove_dir_all(&dir);
 }

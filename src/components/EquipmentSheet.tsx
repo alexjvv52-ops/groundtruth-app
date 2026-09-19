@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Asset } from "@/farm/types";
-import { correctAsset, listAssets, recordAsset, voidAsset } from "@/farm/api";
+import type { Asset, FarmCurrencyView } from "@/farm/types";
+import { correctAsset, farmCurrency, listAssets, recordAsset, voidAsset } from "@/farm/api";
 import { formatCents, parseDollarsToCents } from "@/farm/dollars";
 import { localToday } from "@/farm/dates";
 import {
@@ -54,12 +54,15 @@ export function EquipmentSheet({
   const [disposalDate, setDisposalDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currency, setCurrency] = useState<FarmCurrencyView | null>(null);
   const today = toYyyyMmDd(localToday());
+  const symbol = currency?.symbol ?? "$";
 
   async function load() {
     try {
-      const rows = await listAssets();
+      const [rows, cur] = await Promise.all([listAssets(), farmCurrency()]);
       setAssets(rows);
+      setCurrency(cur);
     } catch (err) {
       setError(errMessage(err));
     }
@@ -358,7 +361,7 @@ export function EquipmentSheet({
                       <span className="flex justify-between gap-3 text-sm text-muted-foreground">
                         <span>{formatServiceDate(asset.placedInServiceOn)}</span>
                         <span className="tabular-nums">
-                          {formatCents(asset.costCents)}
+                          {formatCents(asset.costCents, symbol)}
                         </span>
                         <span>
                           {asset.disposalDate

@@ -17,6 +17,7 @@ import type {
   CashRow,
   CategoryTotal,
   CostEvent,
+  FarmCurrencyView,
   IncomeCorrectionCount,
   IncomeCorrectionRow,
   NetCash,
@@ -35,6 +36,7 @@ import {
   cashOut,
   cashRows,
   expenseRows,
+  farmCurrency,
   incomeCorrectionRows,
   incomeCorrectionsCount,
   listWholesaleOrders,
@@ -105,6 +107,7 @@ export function Books() {
   const [cash, setCash] = useState<CashCollected | null>(null);
   const [cashList, setCashList] = useState<CashRow[]>([]);
   const [owed, setOwed] = useState<OwedSummary | null>(null);
+  const [currency, setCurrency] = useState<FarmCurrencyView | null>(null);
   const [orders, setOrders] = useState<WholesaleOrderView[]>([]);
   const [summary, setSummary] = useState<WriteOffSummary | null>(null);
   const [writeOffs, setWriteOffs] = useState<WriteOffRow[]>([]);
@@ -160,6 +163,7 @@ export function Books() {
           nextCategories,
           nextCorrections,
           nextCorrectionList,
+          nextCurrency,
         ] = await Promise.all([
           cashCollected(from, to),
           cashRows(from, to),
@@ -177,6 +181,7 @@ export function Books() {
           cashByCategory(from, to),
           incomeCorrectionsCount(from, to),
           incomeCorrectionRows(from, to),
+          farmCurrency(),
         ]);
         if (cancelled) return;
         setCash(nextCash);
@@ -195,6 +200,7 @@ export function Books() {
         setCategories(nextCategories);
         setCorrections(nextCorrections);
         setCorrectionList(nextCorrectionList);
+        setCurrency(nextCurrency);
         setError(null);
       } catch (e: unknown) {
         if (cancelled) return;
@@ -230,11 +236,16 @@ export function Books() {
   const leftoverInPeriod = cashList.some(
     (row) => row.recordType === "recorded" && row.source.startsWith("Leftover "),
   );
+  // WORLD-PAY PRINT-C J2 (FACE A TS A): every figure on Books prints the farm
+  // symbol from farm_config.currency, read through farmCurrency() in the same
+  // Promise.all as the figures — so no figure ever renders ahead of its symbol.
+  // "$" is the pre-answer value only, never a boot default in dollars.ts.
+  const symbol = currency?.symbol ?? "$";
   const owedFigure =
     owed == null
       ? null
       : owed.totalCents != null
-        ? `${formatCents(owed.totalCents)} across ${owed.deliveries} ${owed.deliveries === 1 ? "delivery" : "deliveries"}`
+        ? `${formatCents(owed.totalCents, symbol)} across ${owed.deliveries} ${owed.deliveries === 1 ? "delivery" : "deliveries"}`
         : `${owed.deliveries} ${owed.deliveries === 1 ? "delivery" : "deliveries"}, value partly unpriced`;
 
   return (
@@ -278,7 +289,7 @@ export function Books() {
         <CardContent className="flex flex-col gap-3">
           {cash != null && (
             <p className="text-3xl font-medium tabular-nums">
-              {formatCents(cash.totalCents)}
+              {formatCents(cash.totalCents, symbol)}
             </p>
           )}
           <p className="text-sm text-muted-foreground">
@@ -302,7 +313,7 @@ export function Books() {
                 >
                   <span>{row.dateReceived}</span>
                   <span className="text-muted-foreground">{row.source}</span>
-                  <span>{formatCents(row.amountCents)}</span>
+                  <span>{formatCents(row.amountCents, symbol)}</span>
                 </li>
               ))}
             </ul>
@@ -340,7 +351,7 @@ export function Books() {
                     </span>
                   )}
                   {o.pricedTotalCents != null ? (
-                    <span>{formatCents(o.pricedTotalCents)}</span>
+                    <span>{formatCents(o.pricedTotalCents, symbol)}</span>
                   ) : null}
                 </li>
               ))}
@@ -356,7 +367,7 @@ export function Books() {
         <CardContent className="flex flex-col gap-3">
           {summary != null && (
             <p className="text-3xl font-medium tabular-nums">
-              {formatCents(summary.totalShortfallCents)}
+              {formatCents(summary.totalShortfallCents, symbol)}
             </p>
           )}
           <p className="text-sm text-muted-foreground">
@@ -376,7 +387,7 @@ export function Books() {
                 <li key={row.eventId} className="flex flex-col gap-0.5 text-sm">
                   <span>{row.writtenOffOn}</span>
                   <span className="text-muted-foreground">{row.venueName}</span>
-                  <span>{formatCents(row.shortfallCents)}</span>
+                  <span>{formatCents(row.shortfallCents, symbol)}</span>
                 </li>
               ))}
             </ul>
@@ -424,7 +435,7 @@ export function Books() {
         <CardContent className="flex flex-col gap-3">
           {out != null && (
             <p className="text-3xl font-medium tabular-nums">
-              {formatCents(out.totalCents)}
+              {formatCents(out.totalCents, symbol)}
             </p>
           )}
           <p className="text-sm text-muted-foreground">
@@ -443,7 +454,7 @@ export function Books() {
                 <li key={row.eventId} className="flex flex-col gap-0.5 text-sm">
                   <span>{row.datePaid}</span>
                   <span className="text-muted-foreground">{row.payee}</span>
-                  <span>{formatCents(row.amountCents)}</span>
+                  <span>{formatCents(row.amountCents, symbol)}</span>
                 </li>
               ))}
             </ul>
@@ -458,7 +469,7 @@ export function Books() {
         <CardContent className="flex flex-col gap-3">
           {net != null && (
             <p className="text-3xl font-medium tabular-nums">
-              {formatCents(net.netCents)}
+              {formatCents(net.netCents, symbol)}
             </p>
           )}
           <p className="text-sm text-muted-foreground">
@@ -475,10 +486,10 @@ export function Books() {
           {showNet && net != null && (
             <ul className="flex flex-col gap-2">
               <li className="flex flex-col gap-0.5 text-sm">
-                <span>{formatCents(net.collectedCents)}</span>
+                <span>{formatCents(net.collectedCents, symbol)}</span>
               </li>
               <li className="flex flex-col gap-0.5 text-sm">
-                <span>{formatCents(net.outCents)}</span>
+                <span>{formatCents(net.outCents, symbol)}</span>
               </li>
             </ul>
           )}
@@ -492,7 +503,7 @@ export function Books() {
         <CardContent className="flex flex-col gap-3">
           {badDebt != null && (
             <p className="text-3xl font-medium tabular-nums">
-              {formatCents(badDebt.totalCents)}
+              {formatCents(badDebt.totalCents, symbol)}
             </p>
           )}
           <p className="text-sm text-muted-foreground">
@@ -512,7 +523,7 @@ export function Books() {
                 <li key={row.eventId} className="flex flex-col gap-0.5 text-sm">
                   <span>{row.writtenOffOn}</span>
                   <span className="text-muted-foreground">{row.venueName}</span>
-                  <span>{formatCents(row.amountCents)}</span>
+                  <span>{formatCents(row.amountCents, symbol)}</span>
                 </li>
               ))}
             </ul>
@@ -544,7 +555,7 @@ export function Books() {
                   className="flex flex-col gap-0.5 text-sm"
                 >
                   <span>{row.name}</span>
-                  <span>{formatCents(row.totalCents)}</span>
+                  <span>{formatCents(row.totalCents, symbol)}</span>
                 </li>
               ))}
             </ul>

@@ -6,6 +6,7 @@ import type {
   CoverDate,
   CoverageRef,
   Crop,
+  FarmCurrencyView,
   HarvestCommitmentsView,
   HarvestGroup,
   HarvestInput,
@@ -27,7 +28,9 @@ import {
   confirmPhoneCaptures,
   coverPlan,
   discardPhoneCapture,
+  farmCurrency,
   dismissAttention,
+  farmUnits,
   harvestCommitments,
   earlyHarvestGroups,
   harvestGroups,
@@ -53,6 +56,8 @@ import {
 } from "@/farm/api";
 import { monthDayLabel, parseLocalDate } from "@/farm/dates";
 import { formatCents } from "@/farm/dollars";
+import { DEFAULT_UNITS, massFigure, perTrayFigure, perTrayUnit, unitWord } from "@/farm/mass";
+import { typedOunces } from "@/farm/typed";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ErrorLine } from "@/components/ErrorLine";
@@ -187,8 +192,11 @@ function standingLinesFor(stages: StageView[], crops: Crop[]): StandingLine[] {
  * leftover, and the leftover ounces below stay the operator's to type.
  */
 const YIELD_MEMORY_EARLIER = 3;
-/** oz per tray at 0.1 over the rows that carry a weight; null when none does. */
-function ozPerTray(rows: TrayView[]): string | null {
+/** The unrounded mean ounces per tray over the rows that carry a weight; null
+ *  when none does. GT-D27 UNITS (PRECISION G): the figure is rounded once, on
+ *  the face, by mass.ts perTrayFigure - imperial to the shipped 0.1, metric to
+ *  whole grams from this mean, so nothing is rounded twice. */
+function ozPerTray(rows: TrayView[]): number | null {
   let oz = 0;
   let trays = 0;
   for (const t of rows) {
@@ -197,7 +205,7 @@ function ozPerTray(rows: TrayView[]): string | null {
     trays += t.quantity;
   }
   if (trays === 0) return null;
-  return (Math.round((oz / trays) * 10) / 10).toFixed(1);
+  return oz / trays;
 }
 /** The line's bytes, or null while today's key has no weighed row to speak from. */
 function yieldMemoryFor(
@@ -205,12 +213,14 @@ function yieldMemoryFor(
   cropId: string,
   cropName: string,
   todayKey: string,
+  system: string,
 ): string | null {
   const harvested = trays.filter(
     (t) => t.cropId === cropId && t.state === "harvested" && t.harvestedOn != null,
   );
-  const today = ozPerTray(harvested.filter((t) => t.harvestedOn === todayKey));
-  if (today == null) return null;
+  const todayMean = ozPerTray(harvested.filter((t) => t.harvestedOn === todayKey));
+  if (todayMean == null) return null;
+  const today = perTrayFigure(todayMean, system);
   const keys = new Set<string>();
   for (const t of harvested) {
     if (t.harvestedOn != null && t.harvestedOn < todayKey) keys.add(t.harvestedOn);
@@ -221,13 +231,15 @@ function yieldMemoryFor(
     .slice(0, YIELD_MEMORY_EARLIER)
     .map((k) => {
       const label = monthDayLabel(parseLocalDate(k));
-      const figure = ozPerTray(harvested.filter((t) => t.harvestedOn === k));
-      return figure == null ? `${label} weight not recorded` : `${label} ${figure}`;
+      const mean = ozPerTray(harvested.filter((t) => t.harvestedOn === k));
+      return mean == null
+        ? `${label} weight not recorded`
+        : `${label} ${perTrayFigure(mean, system)}`;
     });
   if (earlier.length === 0) {
-    return `Yield today ${today} oz/tray · first harvest of ${cropName} on the books.`;
+    return `Yield today ${today} ${perTrayUnit(system)} · first harvest of ${cropName} on the books.`;
   }
-  return `Yield today ${today} oz/tray · earlier ${earlier.join(" · ")}.`;
+  return `Yield today ${today} ${perTrayUnit(system)} · earlier ${earlier.join(" · ")}.`;
 }
 /**
  * YIELD-STANDING (A) — the SOP-4 standing-week card's quiet second line:
@@ -236,12 +248,12 @@ function yieldMemoryFor(
  * already in trayRows); the variety name resolves to a crop on the crops
  * Today already holds, so a name no crop carries prints nothing. Day keys
  * newest first; a key with no weighed row is skipped for the next-newest
- * weighed key (ozPerTray, the receipt's own figure at 0.1); no weighed key,
+ * weighed key (ozPerTray's mean, rounded once on the face); no weighed key,
  * no line. No clock: the newest key is the greatest harvestedOn string on
  * the rows. Display only — nothing here feeds standing_demand, the sow door,
  * seed or leftover, and the SOP-4 sentence above it is untouched.
  */
-function lastWeighedFor(trays: TrayView[], cropId: string): string | null {
+function lastWeighedFor(trays: TrayView[], cropId: string, system: string): string | null {
   const harvested = trays.filter(
     (t) => t.cropId === cropId && t.state === "harvested" && t.harvestedOn != null,
   );
@@ -250,9 +262,9 @@ function lastWeighedFor(trays: TrayView[], cropId: string): string | null {
     if (t.harvestedOn != null) keys.add(t.harvestedOn);
   }
   for (const k of [...keys].sort().reverse()) {
-    const figure = ozPerTray(harvested.filter((t) => t.harvestedOn === k));
-    if (figure != null) {
-      return `last weighed ${figure} oz/tray · ${monthDayLabel(parseLocalDate(k))}`;
+    const mean = ozPerTray(harvested.filter((t) => t.harvestedOn === k));
+    if (mean != null) {
+      return `last weighed ${perTrayFigure(mean, system)} ${perTrayUnit(system)} · ${monthDayLabel(parseLocalDate(k))}`;
     }
   }
   return null;
@@ -265,22 +277,24 @@ function lastWeighedFor(trays: TrayView[], cropId: string): string | null {
  * short and the jar at or below zero, because no seed sows no tray. With
  * seed still in the jar the line is the figure and nothing more: "enough
  * for N trays" would take an ounces-per-tray this app does not hold as a
- * fact, so nothing is multiplied here. Ounces at 0.1, as Farm prints them.
+ * fact, so nothing is multiplied here. The desk's units, on the face only.
  * Display only — nothing here feeds standing_demand, the sow door, seed or
  * leftover, and the SOP-4 sentence above it is untouched.
  */
 function seedLineFor(
   v: StandingDemandView["varieties"][number],
   row: SeedOnHandRow,
+  system: string,
 ): string {
   if (row.onHandOz === null) return "seed on hand unknown";
-  const x = Math.abs(row.onHandOz).toFixed(1);
+  const x = massFigure(Math.abs(row.onHandOz), system);
+  const u = unitWord(system);
   if (v.shortfall > 0 && row.onHandOz <= 0) {
     return row.onHandOz === 0
       ? `you promised ${v.traysWeek} trays of ${v.name} and the jar is empty`
-      : `you promised ${v.traysWeek} trays of ${v.name} and the jar is short ${x} oz`;
+      : `you promised ${v.traysWeek} trays of ${v.name} and the jar is short ${x} ${u}`;
   }
-  return row.onHandOz < 0 ? `jar short ${x} oz` : `${x} oz of seed on hand`;
+  return row.onHandOz < 0 ? `jar short ${x} ${u}` : `${x} ${u} of seed on hand`;
 }
 /**
  * OWED-LO (audit R-2): mirrored byte-for-byte with Money.tsx owedLine
@@ -288,7 +302,7 @@ function seedLineFor(
  * Priced-unpaid leftover blocks the empty line and joins the count and the
  * total. Unpriced leftover carries no cents and never appears here.
  */
-function owedLine(o: OwedSummary | null): string {
+function owedLine(o: OwedSummary | null, symbol = "$"): string {
   if (o == null) return "Owed to you: not readable right now.";
   if (o.deliveries === 0 && o.leftoverCount === 0) return "Nothing owed to you.";
   const items: string[] = [];
@@ -303,7 +317,7 @@ function owedLine(o: OwedSummary | null): string {
     o.deliveries > 0 && o.totalCents == null ? null : (o.totalCents ?? 0) + o.leftoverCents;
   const what =
     totalCents != null
-      ? `Owed to you: ${formatCents(totalCents)} across ${across}`
+      ? `Owed to you: ${formatCents(totalCents, symbol)} across ${across}`
       : `Owed to you: ${across}, value partly unpriced`;
   const age =
     o.oldestDays == null
@@ -454,10 +468,14 @@ type LastAction =
  * count of varieties. No clock, no farm name, no estimate: the receipt's own
  * count and weighed ounces.
  */
-function harvestReceiptText(a: Extract<LastAction, { kind: "harvested" }>): string {
+function harvestReceiptText(
+  a: Extract<LastAction, { kind: "harvested" }>,
+  system: string,
+): string {
+  const weight = `${massFigure(a.yieldOz, system)} ${unitWord(system)}`;
   return a.varietyCount === 1 && a.cropName
-    ? `Harvested ${trayCountLabel(a.trayCount)} of ${a.cropName} — ${a.yieldOz.toFixed(1)} oz.`
-    : `Harvested ${trayCountLabel(a.trayCount)} across ${a.varietyCount} varieties — ${a.yieldOz.toFixed(1)} oz.`;
+    ? `Harvested ${trayCountLabel(a.trayCount)} of ${a.cropName} — ${weight}.`
+    : `Harvested ${trayCountLabel(a.trayCount)} across ${a.varietyCount} varieties — ${weight}.`;
 }
 type FarmShape = {
   venues: number;
@@ -503,6 +521,14 @@ export function Today({
   onOpenHealth: () => void;
 }) {
   const [crops, setCrops] = useState<Crop[]>([]);
+  // GT-D27 UNITS (J2) - the display system this desk prints mass in. Display
+  // only: every write on Today still carries ounces. Imperial until the desk
+  // answers, and imperial if it never does (STORE B).
+  const [unitSystem, setUnitSystem] = useState<string>(DEFAULT_UNITS);
+  // WORLD-PAY PRINT-C J2 (FACE A TS A) - the farm symbol the owed line prints.
+  // Read-only here - Settings owns the write. Read before refresh(), so the
+  // line never renders a "$" ahead of the pick. Never a boot default.
+  const [currency, setCurrency] = useState<FarmCurrencyView | null>(null);
   const [view, setView] = useState<TodayView | null>(null);
   const [attention, setAttention] = useState<AttentionItem[]>([]);
   const [demand, setDemand] = useState<StandingDemandView | null>(null);
@@ -683,6 +709,18 @@ export function Today({
       try {
         const c = await listCrops();
         if (!cancelled) setCrops(c);
+        try {
+          const u = await farmUnits();
+          if (!cancelled) setUnitSystem(u.system);
+        } catch (e) {
+          console.error(e);
+        }
+        try {
+          const cur = await farmCurrency();
+          if (!cancelled) setCurrency(cur);
+        } catch (e) {
+          console.error(e);
+        }
         await refresh();
       } catch (err) {
         console.error(err);
@@ -977,7 +1015,7 @@ export function Today({
     setLeftoverBusy(true);
     try {
       setLastError(null);
-      const oz = Number.parseFloat(leftoverOz[cropId] ?? "");
+      const oz = typedOunces(leftoverOz[cropId] ?? "", unitSystem);
       const listed = await recordLeftoverListing({
         cropId,
         harvestedOn,
@@ -1318,7 +1356,7 @@ export function Today({
             // YIELD-STANDING (A) — one muted line under the sentence, only while
             // a weighed harvest day exists for the variety's crop. Read-only.
             const crop = crops.find((c) => c.name === v.name);
-            const weighed = crop == null ? null : lastWeighedFor(trayRows, crop.id);
+            const weighed = crop == null ? null : lastWeighedFor(trayRows, crop.id, unitSystem);
             // TODAY-JAR (MOVE 2) — the jar line, only while the crop has a jar
             // row (a receipt). The row is found by crop id, never by name.
             const jarRow =
@@ -1335,7 +1373,7 @@ export function Today({
                 )}
                 {jarRow != null && (
                   <p className="text-sm text-muted-foreground">
-                    {seedLineFor(v, jarRow)}
+                    {seedLineFor(v, jarRow, unitSystem)}
                   </p>
                 )}
               </div>
@@ -1456,7 +1494,7 @@ export function Today({
       render: (large) => (
         <Card className={harvestConfirmClassFor(large)}>
           <div className="flex items-center justify-between gap-4">
-            <span>{harvestReceiptText(a)}</span>
+            <span>{harvestReceiptText(a, unitSystem)}</span>
             <Button
               type="button"
               variant="ghost"
@@ -1472,7 +1510,7 @@ export function Today({
             const listedOz = leftoverListed[c.cropId] as number | undefined;
             // YIELD-MEMORY (A / CAP A) — display only, above the leftover row;
             // the leftover input below stays empty and its door unchanged.
-            const yieldLine = yieldMemoryFor(trayRows, c.cropId, c.cropName, v.harvestedOn);
+            const yieldLine = yieldMemoryFor(trayRows, c.cropId, c.cropName, v.harvestedOn, unitSystem);
             return (
               <div key={c.cropId} className="flex flex-col gap-1">
                 <p className="text-sm font-medium">{v.header}</p>
@@ -1498,12 +1536,12 @@ export function Today({
                 )}
                 {listedOz != null ? (
                   <p className="text-sm text-muted-foreground">
-                    Leftover listed — {listedOz.toFixed(1)} oz.
+                    Leftover listed — {massFigure(listedOz, unitSystem)} {unitWord(unitSystem)}.
                   </p>
                 ) : leftoverGone[c.cropId] === true ? null : (
                   <div className="flex items-end gap-2">
                     <label className="flex flex-col gap-1 text-sm">
-                      Leftover ounces
+                      Leftover ({unitWord(unitSystem)})
                       <input
                         className="h-12 w-28 rounded-md border border-input bg-card px-3"
                         inputMode="decimal"
@@ -1614,8 +1652,8 @@ export function Today({
           className={tapCardClassFor(large)}
         >
           {hs.varietyCount === 1 && hs.singleCropName
-            ? `Harvest today — ${trayCountLabel(hs.trayCount)} of ${hs.singleCropName}, est. ${hs.estimatedYieldOz.toFixed(1)} oz`
-            : `Harvest today — ${trayCountLabel(hs.trayCount)}, ${hs.varietyCount} varieties, est. ${hs.estimatedYieldOz.toFixed(1)} oz`}
+            ? `Harvest today — ${trayCountLabel(hs.trayCount)} of ${hs.singleCropName}, est. ${massFigure(hs.estimatedYieldOz, unitSystem)} ${unitWord(unitSystem)}`
+            : `Harvest today — ${trayCountLabel(hs.trayCount)}, ${hs.varietyCount} varieties, est. ${massFigure(hs.estimatedYieldOz, unitSystem)} ${unitWord(unitSystem)}`}
         </Card>
       ),
     });
@@ -1716,7 +1754,7 @@ export function Today({
           OWED-LO (audit R-2): priced-unpaid leftover is owed — the gate
           counts it, so leftover-only owed prints here too. */}
       {!loading && (owed == null || owed.deliveries > 0 || owed.leftoverCount > 0) && (
-        <p className="text-3xl font-medium tabular-nums">{owedLine(owed)}</p>
+        <p className="text-3xl font-medium tabular-nums">{owedLine(owed, currency?.symbol ?? "$")}</p>
       )}
       <ErrorLine message={lastError} />
       {/* CAPACITY-FACE (WIDTH A) — the rack. It sits here in the 28rem column
@@ -2011,7 +2049,7 @@ export function Today({
           {lastAction?.kind === "harvested" && (
             <article className="pack-page flex flex-col gap-2">
               <h2 className="text-lg font-medium">{cutDate}</h2>
-              <p className="text-sm">{harvestReceiptText(lastAction)}</p>
+              <p className="text-sm">{harvestReceiptText(lastAction, unitSystem)}</p>
             </article>
           )}
         </section>
@@ -2024,6 +2062,7 @@ export function Today({
         onSow={handleSow}
         demand={demand}
         coverDates={cover}
+        unitSystem={unitSystem}
       />
       <WeightPad
         open={harvestOpen}
@@ -2031,6 +2070,7 @@ export function Today({
         groups={harvestGroupsForPad ?? view?.harvests ?? []}
         onDone={handleHarvestDone}
         onDiscarded={handleDiscarded}
+        unitSystem={unitSystem}
       />
       <FarmBackupSheet
         open={backupOpen}

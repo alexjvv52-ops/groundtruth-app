@@ -363,6 +363,22 @@ pub fn set_farm_pay_instructions(
     crate::currency::set_farm_pay_instructions(&conn, &text)
 }
 
+/// GT-D27 UNITS: the display system this desk prints mass in. Config, not a Kind.
+#[tauri::command]
+pub fn farm_units(state: State<'_, Db>) -> Result<crate::units::FarmUnitsView, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    crate::units::farm_units_view(&conn)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn set_farm_units(
+    state: State<'_, Db>,
+    system: String,
+) -> Result<crate::units::FarmUnitsView, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    crate::units::set_farm_units(&conn, &system)
+}
+
 /// INV-A: render-only bills. Refusals are the invoice sentences, verbatim.
 #[tauri::command(rename_all = "camelCase")]
 pub fn wholesale_invoice_bill(

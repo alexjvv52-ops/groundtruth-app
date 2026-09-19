@@ -606,7 +606,7 @@ fn b1_delivered_unpaid_raises_ages_and_clears_on_pay() {
             .collect()
     };
     assert_eq!(open.len(), 1);
-    assert!(open[0].1.contains("$16.00"), "{}", open[0].1);
+    assert!(open[0].1.contains("USD 16.00"), "{}", open[0].1);
     assert!(open[0].1.contains(&v.name), "{}", open[0].1);
     let row_id = open[0].0.clone();
 
@@ -1776,6 +1776,7 @@ fn money_checks(conn: &Connection) -> (crate::attention::MoneyDebts, Vec<CheckSt
     let debts = attention::money_debts(conn).unwrap();
     let inputs = CheckInputs {
         money: debts.clone(),
+        currency: "usd".into(),
         ..CheckInputs::default()
     };
     let now = db::utc_now_rfc3339();
@@ -2576,7 +2577,7 @@ fn rb3_pay_amount_gate_warns_and_refuses_only_unacknowledged() {
     let mismatch = wholesale::record_order(&mut conn, &v.venue_id, &d, vec![line], false).unwrap();
     wholesale::deliver_order(&mut conn, &mismatch.id, None).unwrap();
 
-    let under = "This order is priced at $144.00. You are recording $12.00 — $132.00 \
+    let under = "This order is priced at USD 144.00. You are recording USD 12.00 — USD 132.00 \
          less than the order. Recording it marks the order paid in full and it \
          stops being owed.";
     assert_eq!(
@@ -2624,7 +2625,7 @@ fn rb3_pay_amount_gate_warns_and_refuses_only_unacknowledged() {
     assert_eq!(for_order.len(), 1);
     assert_eq!(for_order[0].amount_cents, 1200);
 
-    let over = "This order is priced at $144.00. You are recording $500.00 — $356.00 \
+    let over = "This order is priced at USD 144.00. You are recording USD 500.00 — USD 356.00 \
          more than the order. Recording it marks the order paid in full and it \
          stops being owed.";
     assert_eq!(

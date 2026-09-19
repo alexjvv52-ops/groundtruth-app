@@ -7,12 +7,15 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { unitWord } from "@/farm/mass";
+import { typedOunces } from "@/farm/typed";
 
 type SeedInSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   crops: Crop[];
   onRecorded: (receipt: SeedReceiptView) => void;
+  unitSystem: string;
 };
 
 /**
@@ -28,6 +31,7 @@ export function SeedInSheet({
   onOpenChange,
   crops,
   onRecorded,
+  unitSystem,
 }: SeedInSheetProps) {
   const [selectedCrop, setSelectedCrop] = useState<Crop | null>(null);
   const [oz, setOz] = useState("");
@@ -56,7 +60,7 @@ export function SeedInSheet({
     setBusy(true);
     setError(null);
     try {
-      const parsed = Number.parseFloat(oz);
+      const parsed = typedOunces(oz, unitSystem);
       const receipt = await recordSeedReceived({
         cropId: selectedCrop.id,
         receivedOz: Number.isFinite(parsed) ? parsed : 0,
@@ -122,7 +126,7 @@ export function SeedInSheet({
               <h2 className="text-2xl font-semibold">{selectedCrop.name}</h2>
               <label className="flex flex-col gap-2">
                 <span className="text-sm text-muted-foreground">
-                  Seed received (oz)
+                  {`Seed received (${unitWord(unitSystem)})`}
                 </span>
                 <input
                   type="text"
@@ -133,7 +137,7 @@ export function SeedInSheet({
                     setOz(e.target.value);
                   }}
                   placeholder="Weigh and enter"
-                  aria-label="Seed received ounces"
+                  aria-label={`Seed received ${unitWord(unitSystem)}`}
                   className="h-14 w-full rounded-xl border bg-card px-4 text-lg tabular-nums focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 />
               </label>

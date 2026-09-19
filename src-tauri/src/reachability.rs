@@ -334,24 +334,40 @@ pub fn jar_empty(c: &CoverDate) -> bool {
 /// The locked HEALTH-JAR tail. `{x}` is the jar's own figure - already at 0.1
 /// from `seed_on_hand` - printed with the one decimal the Farm jar line
 /// prints. Empty unless the jar is.
-fn jar_tail(c: &CoverDate) -> String {
+/// The figure and its unit word follow the farm's display system; the jar's
+/// stored ounces are untouched.
+fn jar_tail(c: &CoverDate, units_system: &str) -> String {
     if !jar_empty(c) {
         return String::new();
     }
     match c.jar_on_hand_oz {
         Some(oz) if oz < 0.0 => {
+            let figure = if units_system == "metric" {
+                crate::units::grams(oz.abs()).to_string()
+            } else {
+                format!("{:.1}", oz.abs())
+            };
             format!(
-                " The jar is short {:.1} oz — record seed in on Farm, then sow.",
-                oz.abs()
+                " The jar is short {figure} {unit} — record seed in on Farm, then sow.",
+                unit = crate::units::unit_for(units_system)
             )
         }
         _ => " The jar is empty — record seed in on Farm, then sow.".to_string(),
     }
 }
 
+/// The COVER sentence at the shipped default system. Callers that build a
+/// CoverDate from a literal reach the sentence here; the plan reads the farm's
+/// own pick and calls `cover_message_in`.
+#[allow(dead_code)] // H-2: live in tests; dead only in the lib target.
+pub fn cover_message(c: &CoverDate) -> String {
+    cover_message_in(c, crate::units::DEFAULT_UNITS)
+}
+
 /// The COVER sentence. B3's hard rule lives here: an unreachable date says
 /// "cannot be fixed by sowing" and never invites a sow. No caller may soften it.
-pub fn cover_message(c: &CoverDate) -> String {
+/// `units_system` reaches the jar tail only — arms A-D carry no mass.
+pub fn cover_message_in(c: &CoverDate, units_system: &str) -> String {
     let d = format_mon_d_local(&c.harvest_date).unwrap_or_else(|_| c.harvest_date.clone());
     let n = tray_word(c.short_trays);
     let crop = &c.crop_name;
@@ -420,7 +436,7 @@ pub fn cover_message(c: &CoverDate) -> String {
     }
 
     // HEALTH-JAR: only the three sowing arms carry the jar. A-D returned above.
-    let jar = jar_tail(c);
+    let jar = jar_tail(c, units_system);
     if r.must_sow_today {
         // E
         return format!(
@@ -590,6 +606,7 @@ pub fn cover_plan_on(conn: &Connection, today: &str) -> Result<Vec<CoverDate>, S
     // the plan, and the money slot renders "could not read" for M1/M2/M3
     // (INT-001) - never a calm sentence over a jar this render could not see.
     let jar = crate::seed::seed_on_hand(conn)?;
+    let units_system = crate::units::farm_units(conn)?;
     let mut out = Vec::new();
     for row in caps.iter() {
         if row.cover_remaining >= 0 || row.harvest_date.as_str() < today {
@@ -616,7 +633,7 @@ pub fn cover_plan_on(conn: &Connection, today: &str) -> Result<Vec<CoverDate>, S
             harvested_trays: row.harvested_trays,
             jar_on_hand_oz,
         };
-        c.message = cover_message(&c);
+        c.message = cover_message_in(&c, &units_system);
         out.push(c);
     }
     out.sort_by(|a, b| {

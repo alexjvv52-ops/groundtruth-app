@@ -13,6 +13,7 @@ use crate::phone::{
 use crate::projection::{self, EXCLUSION_LIST};
 use crate::reachability::format_mon_d_local;
 use crate::trays;
+use crate::units;
 use chrono::{Duration, Local, SecondsFormat, Utc};
 use rusqlite::Connection;
 use serde_json::json;
@@ -848,4 +849,48 @@ fn pf16_dev_seed_states_its_origin_and_raises() {
         matches!(phone::gate(&conn, &row(&conn, &f.proposal_id), 1, Some(3.0), "Kale", &today()).unwrap(),
         GateVerdict::Blocked(b) if b.reason == "capture_in_future")
     );
+}
+
+#[test]
+fn phone_metric_harvest_prints_grams_and_keeps_ounces_on_the_book() {
+    let mut conn = mem();
+    units::set_farm_units(&conn, "metric").unwrap();
+    let _id = lit(&mut conn, 2, 5, 2);
+    let at = captured(1);
+    ingest(&mut conn, &input("h1", "harvest", 2, Some(12.0), &at));
+    let age = phone::capture_age_label(&at, &now_utc()).unwrap();
+    let items = attention::check_attention(&conn).unwrap();
+    let it = items
+        .iter()
+        .find(|a| a.kind == PHONE_PROPOSAL_ATTENTION_KIND)
+        .expect("raised");
+    assert_eq!(
+        it.message,
+        format!("Harvest 2 trays of Kale, 340 g — captured {age}.")
+    );
+    let view = phone::phone_captures(&conn).unwrap();
+    assert_eq!(view.len(), 1);
+    assert_eq!(
+        view[0].message,
+        format!("Harvest 2 trays of Kale, 340 g — captured {age}.")
+    );
+    let zero = confirm(&mut conn, "h1", 2, Some(0.0));
+    assert_eq!(
+        zero.blocked[0].sentence,
+        phone::WEIGHT_NOT_POSITIVE_SENTENCE
+    );
+    let r = confirm(&mut conn, "h1", 2, Some(12.0));
+    assert!(r.blocked.is_empty(), "{:?}", r.blocked);
+    assert_eq!(
+        r.written[0].line,
+        format!("Recorded from phone capture — 2 trays of Kale, 340 g (captured {age}).")
+    );
+    let (aoz, accepted): (f64, f64) = conn
+        .query_row(
+            "SELECT actual_yield_oz, accepted_yield_oz FROM phone_proposals WHERE proposal_id='h1'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((aoz, accepted), (12.0, 12.0));
 }

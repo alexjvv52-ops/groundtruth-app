@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { MoneyJustLeftSheet } from "@/components/MoneyJustLeftSheet";
+import { unitWord } from "@/farm/mass";
 
 type SowSheetProps = {
   open: boolean;
@@ -25,6 +26,7 @@ type SowSheetProps = {
   onSow: (crop: Crop, quantity: number, seedOz: number | null) => void;
   demand?: import("@/farm/types").StandingDemandView | null;
   coverDates?: CoverDate[] | null;
+  unitSystem: string;
 };
 
 export function SowSheet({
@@ -34,6 +36,7 @@ export function SowSheet({
   onSow,
   demand = null,
   coverDates = null,
+  unitSystem,
 }: SowSheetProps) {
   const [selectedCrop, setSelectedCrop] = useState<Crop | null>(null);
   const [quantity, setQuantity] = useState(1);
@@ -89,7 +92,7 @@ export function SowSheet({
           : 1;
     setQuantity(q);
     setSelectedCrop(crop);
-    setSeedField(freshSeedProposal(crop.seedRateOzPerTray, q));
+    setSeedField(freshSeedProposal(crop.seedRateOzPerTray, q, unitSystem));
     setSeedError(null);
   }
 
@@ -119,13 +122,14 @@ export function SowSheet({
         prev,
         selectedCrop.seedRateOzPerTray,
         quantity,
+        unitSystem,
       ),
     );
-  }, [quantity, selectedCrop]);
+  }, [quantity, selectedCrop, unitSystem]);
 
   function confirmSow() {
     if (!selectedCrop) return;
-    const parsed = confirmSeedQuantity(seedField);
+    const parsed = confirmSeedQuantity(seedField, unitSystem);
     if (!parsed.ok) {
       setSeedError(parsed.error);
       return;
@@ -351,7 +355,7 @@ export function SowSheet({
 
                   <label className="flex flex-col gap-2">
                     <span className="text-sm text-muted-foreground">
-                      Seed weight (oz)
+                      {`Seed weight (${unitWord(unitSystem)})`}
                     </span>
                     <input
                       type="text"

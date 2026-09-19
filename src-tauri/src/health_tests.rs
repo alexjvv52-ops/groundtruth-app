@@ -681,6 +681,7 @@ fn deliver_debt(days_late: i64, trays: i64) -> DeliverDebt {
 fn with_money(money: MoneyDebts) -> CheckInputs {
     CheckInputs {
         money,
+        currency: "usd".into(),
         ..CheckInputs::default()
     }
 }
@@ -705,7 +706,7 @@ fn m1_owed_bands_and_the_invariant_floor() {
     });
     let s = severity_for("M1", None, NOW, &young);
     assert_eq!(s.severity, Severity::Degraded, "{}", s.sentence);
-    assert!(s.sentence.contains("$180.00"), "{}", s.sentence);
+    assert!(s.sentence.contains("USD 180.00"), "{}", s.sentence);
     assert!(s.sentence.contains("1 delivery"), "{}", s.sentence);
     assert!(s.sentence.contains("oldest 3 days"), "{}", s.sentence);
 
@@ -736,7 +737,7 @@ fn m1_owed_bands_and_the_invariant_floor() {
     });
     let s = severity_for("M1", None, NOW, &unpriced);
     assert!(s.sentence.contains("partly unpriced"), "{}", s.sentence);
-    assert!(!s.sentence.contains('$'), "no fake total: {}", s.sentence);
+    assert!(!s.sentence.contains("USD"), "no fake total: {}", s.sentence);
     assert!(s.sentence.contains("2 deliveries"), "{}", s.sentence);
 }
 
@@ -746,15 +747,19 @@ fn m1_uncountable_debts_drop_the_age_phrase() {
         collect: vec![collect_debt_uncountable(5, 18000, false)],
         ..MoneyDebts::default()
     });
+    let only = CheckInputs {
+        currency: "zar".into(),
+        ..only
+    };
     let s = severity_for("M1", None, NOW, &only);
     assert_eq!(s.severity, Severity::Degraded, "{}", s.sentence);
-    assert!(s.sentence.contains("$180.00"), "{}", s.sentence);
+    assert!(s.sentence.contains("ZAR 180.00"), "{}", s.sentence);
     assert!(s.sentence.contains("1 delivery"), "{}", s.sentence);
     assert!(!s.sentence.contains("delivered today"), "{}", s.sentence);
     assert!(!s.sentence.contains(", oldest"), "{}", s.sentence);
     assert_eq!(
         s.sentence,
-        "M1 Owed to you — $180.00 across 1 delivery. Collect the oldest on the Money tab."
+        "M1 Owed to you — ZAR 180.00 across 1 delivery. Collect the oldest on the Money tab."
     );
 }
 

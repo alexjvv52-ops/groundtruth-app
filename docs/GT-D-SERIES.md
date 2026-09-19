@@ -374,6 +374,18 @@ or a request body.
 
 ---
 
+## GT-D27 — UNITS: the farm file weighs in ounces; Settings holds one display system and printers convert
+
+**Decision.** Chosen 2026-09-17 by operator order (UNITS: LAW A · SCOPE A · STORE B · CANON A · PRINT B · PRECISION G · TRAYS A · COUPLE A · COPY FABLE · CAP A · INPUT A · INTERIM B · IDENT A · WORKER A), signed on the E lab tree; it reaches D only when E lands. Schema 45 → 46 adds one nullable column to `farm_config` (v41): `units` — config class, one row, id = 1, written by Settings on the PC, never by an apply_*, declared on `projection::verify::EXCLUSION_LIST`. `src-tauri/src/units.rs` owns the sealed list, and this chip seals two systems: `imperial` (ounces) and `metric` (grams). NULL, blank, or a system this build is not sealed for reads `imperial`, so no farm changes the units it prints in by upgrading. Mass stays in ounces wherever it is stored: `trays.actual_yield_oz`, `crops.expected_yield_oz`, `crops.seed_rate_oz_per_tray`, `seed_receipts.received_oz`, `leftover_listings.listed_oz` and the `consumption_events` oz rows are untouched, no payload gains a unit field, and verify-replay compares the same bytes after the pick moves as before it. Grams are a printing step: `units::grams` converts at `OZ_TO_G = 28.349523125` — exact by definition, a pound being 453.59237 g and sixteen ounces — rounded half away from zero to whole grams, against one signed fixture table. Counts are not mass: trays, shelf slots and trays-per-week never convert.
+
+**Forbids.** A unit field on any event payload. Rewriting a stored ounce column into another unit, or writing a converted figure back into a row. A per-crop or per-venue unit override. A display system that arrives by currency, environment variable, request parameter, deploy variable, request body or flag file. A kilogram face. An apply_* that reads `farm_config` to decide what a row means. A desk that prints one system while its inputs ask for the other.
+
+**Prevents.** A grower who thinks in grams reading a US customary desk with no way to change it, and the silent opposite — a toggle that quietly rewrites historic harvests so last Tuesday's scale no longer matches the paper it printed. GT-D24 and GT-D25 hold: a leftover listing and a seed receipt are still operator-entered ounce quantities in the file, however they are shown.
+
+**Signed** 2026-09-17 (operator, UNITS: LAW A · SCOPE A · STORE B · CANON A · PRINT B · PRECISION G · TRAYS A · COUPLE A · COPY FABLE · CAP A · INPUT A · INTERIM B · IDENT A · WORKER A; J1 UNITS-STORE).
+
+---
+
 ## GT-D14 — The wholesale door: four order-book kinds, one money register, one capacity pool
 
 **Decision.** Four register-domain kinds are admitted for the wholesale order

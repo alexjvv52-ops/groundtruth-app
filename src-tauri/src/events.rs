@@ -590,3 +590,38 @@ pub fn inverse_set_state(tray_id: &str, from: &str, clear_cols: &[&str]) -> Valu
         "clear": clear_cols,
     })
 }
+
+/// LINK-CODE (GT-D26, VIEW A / READ A). The code each live link_minted event
+/// was minted in, keyed by entity_id — one scan of the log per list call,
+/// read from the payload the seal already checked at write time. Never
+/// stored: apply_* keeps dropping the code, no projection column exists,
+/// and verify-replay has nothing new to compare. A missing or non-text
+/// value is simply absent (FALLBACK A) — the readers print no stand-in.
+pub(crate) fn minted_codes(
+    conn: &Connection,
+    kind: Kind,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT entity_id, json_extract(payload, '$.currency') FROM event_log
+             WHERE kind = ?1 AND undone_at IS NULL
+             ORDER BY seq",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([kind.as_str()], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, rusqlite::types::Value>(1)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut out = std::collections::HashMap::new();
+    for row in rows {
+        let (entity_id, code) = row.map_err(|e| e.to_string())?;
+        if let rusqlite::types::Value::Text(code) = code {
+            out.insert(entity_id, code);
+        }
+    }
+    Ok(out)
+}

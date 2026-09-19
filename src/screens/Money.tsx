@@ -43,6 +43,7 @@ import {
   farmCurrency,
   farmDisplayName,
   farmPayInstructions,
+  farmUnits,
   healthStatus,
   listCostCategories,
   listCrops,
@@ -72,6 +73,8 @@ import {
 } from "@/farm/api";
 import { localToday, monthDayLabel, parseLocalDate } from "@/farm/dates";
 import { formatCents } from "@/farm/dollars";
+import { DEFAULT_UNITS, massFigure, unitWord } from "@/farm/mass";
+import { typedOunces } from "@/farm/typed";
 import {
   Sheet,
   SheetContent,
@@ -251,7 +254,7 @@ function billTitle(bill: InvoiceBillView): string {
  * sheet's lines in the sheet's order, the receipt line included, then
  * "Pay online: {url}" last when a link exists. Nothing the sheet does not print.
  */
-function billText(bill: InvoiceBillView, farmName: string | null, receipt: string, symbol = "$", payBy: string | null = null): string {
+function billText(bill: InvoiceBillView, farmName: string | null, receipt: string, symbol = "$", payBy: string | null = null, system: string = DEFAULT_UNITS): string {
   return [
     farmName,
     billTitle(bill),
@@ -265,7 +268,7 @@ function billText(bill: InvoiceBillView, farmName: string | null, receipt: strin
         `${line.cropName} · ${line.trays} trays × ${cents(line.priceCentsPerTray, symbol)} = ${cents(line.lineTotalCents, symbol)}`,
     ),
     bill.leftoverLine != null
-      ? `Leftover ${bill.leftoverLine.cropName} · ${bill.leftoverLine.harvestedOn} · ${bill.leftoverLine.listedOz.toFixed(1)} oz`
+      ? `Leftover ${bill.leftoverLine.cropName} · ${bill.leftoverLine.harvestedOn} · ${massFigure(bill.leftoverLine.listedOz, system)} ${unitWord(system)}`
       : null,
     `Total ${cents(bill.totalCents, symbol)}`,
     bill.paidOn != null ? `Paid ${bill.paidOn}` : null,
@@ -459,12 +462,17 @@ export function Money({
   // through farmDisplayName(), the same farm_config reader Settings uses.
   // One source: Money keeps no farm-name store and never writes the name.
   const [farmName, setFarmName] = useState<string | null>(null);
-  // GT-D26 WORLD-PAY: the farm currency the Connect sentence and the link line
-  // speak. Read-only here — Settings owns the write, the way it owns the name.
+  // GT-D26 WORLD-PAY: the farm currency the Connect sentence and the amount
+  // symbols speak. Read-only here — Settings owns the write, the way it owns
+  // the name. LINK-CODE J2: the link line no longer reads it (FACE A).
   const [currency, setCurrency] = useState<FarmCurrencyView | null>(null);
   // GT-D26 WORLD-PAY (ONRAMP B): the farmer's own how-to-pay line.
   // Read-only here — Settings owns the write, the way it owns the name.
   const [payInstructions, setPayInstructions] = useState<string | null>(null);
+  // GT-D27 UNITS (PRINT B) — the display system Money prints mass in. Display
+  // only: leftoverOz writes still carry ounces; the leftover input no longer says Ounces.
+  // Imperial until the desk answers, and imperial if it never does (STORE B).
+  const [unitSystem, setUnitSystem] = useState<string>(DEFAULT_UNITS);
   // INTEGRITY-RECEIPT (STAMP A) — the last verify pass time H4 reported when
   // the bill was opened; null is "no pass to print", never a guess.
   const [verifyWhen, setVerifyWhen] = useState<string | null>(null);
@@ -631,6 +639,17 @@ export function Money({
 
   useEffect(() => {
     void load().catch((e: unknown) => setError(errMessage(e)));
+    // GT-D27 UNITS (PRINT B) — read on its own, the way J2 read it on Today: a
+    // units refusal is a console line and an imperial face, never Money's error
+    // line and never a blank screen.
+    void (async () => {
+      try {
+        const u = await farmUnits();
+        setUnitSystem(u.system);
+      } catch (e) {
+        console.error(e);
+      }
+    })();
   }, []);
 
   // B3: the sow-by implication of the chosen date, before the operator commits.
@@ -685,9 +704,16 @@ export function Money({
     setWriteOffReason("");
   }, [linkingIncomeId, linkOrderId]);
 
-  // GT-D26 WORLD-PAY: the printed link line names the code it was minted in.
-  // Before the view loads it reads exactly as the tree reads today.
-  const linkLabel = currency != null ? `Payment link (${currency.code.toUpperCase()})` : "Payment link";
+  // LINK-CODE J2 (FACE A / FALLBACK A): the printed link line names the code
+  // the row's link was actually minted in — the row's own mintedCurrency from
+  // the sealed link_minted event, never the Settings pick. A linked row whose
+  // mint carries no readable code prints the bare label and no stand-in.
+  // Settings' currency still drives the amount symbols and the Connect
+  // sentence (AMOUNT A); this helper never reads it.
+  function linkLabelFor(mintedCurrency: string | null): string {
+    const code = mintedCurrency?.trim() ?? "";
+    return code !== "" ? `Payment link (${code.toUpperCase()})` : "Payment link";
+  }
   const cashIn = income.reduce((s, r) => s + r.amountCents, 0);
   const cashOut = expenses.reduce((s, r) => s + r.amountCents, 0);
   const liveWholesale = wholesale.filter((o) => o.state !== "voided");
@@ -995,7 +1021,7 @@ export function Money({
     setBusy(true);
     setError(null);
     try {
-      const oz = Number.parseFloat(leftoverOz);
+      const oz = typedOunces(leftoverOz, unitSystem);
       await recordLeftoverListing({
         cropId: leftoverCropId,
         harvestedOn: leftoverDay.trim(),
@@ -1436,7 +1462,7 @@ export function Money({
     if (invoiceBill == null || billReceipt == null) return;
     setError(null);
     try {
-      await navigator.clipboard.writeText(billText(invoiceBill, farmName, billReceipt, currency?.symbol ?? "$", payInstructions));
+      await navigator.clipboard.writeText(billText(invoiceBill, farmName, billReceipt, currency?.symbol ?? "$", payInstructions, unitSystem));
       setBillCopiedFor(invoiceBill.number);
     } catch (e: unknown) {
       setError(errMessage(e), BILL_SHEET);
@@ -1448,7 +1474,7 @@ export function Money({
     try {
       const subject = encodeURIComponent(billTitle(invoiceBill));
       const body = encodeURIComponent(
-        billText(invoiceBill, farmName, billReceipt, currency?.symbol ?? "$", payInstructions).replace(/\n/g, "\r\n"),
+        billText(invoiceBill, farmName, billReceipt, currency?.symbol ?? "$", payInstructions, unitSystem).replace(/\n/g, "\r\n"),
       );
       await openUrl(`mailto:?subject=${subject}&body=${body}`);
     } catch (e: unknown) {
@@ -1575,7 +1601,7 @@ export function Money({
               )}
               {!SETTLED_STATES.has(o.state) && o.paymentLinkUrl != null && (
                 <div className="flex flex-col gap-1">
-                  <p className="text-sm break-all">{linkLabel}: {o.paymentLinkUrl}</p>
+                  <p className="text-sm break-all">{linkLabelFor(o.mintedCurrency)}: {o.paymentLinkUrl}</p>
                   <Button type="button" variant="outline" className="self-start text-sm" onClick={() => void onCopyLink(o)}>
                     {linkCopiedId === o.id ? "Copied" : "Copy"}
                   </Button>
@@ -1904,7 +1930,7 @@ export function Money({
               ))}
               {invoiceBill.leftoverLine != null && (
                 <p className="text-sm">
-                  Leftover {invoiceBill.leftoverLine.cropName} · {invoiceBill.leftoverLine.harvestedOn} · {invoiceBill.leftoverLine.listedOz.toFixed(1)} oz
+                  Leftover {invoiceBill.leftoverLine.cropName} · {invoiceBill.leftoverLine.harvestedOn} · {massFigure(invoiceBill.leftoverLine.listedOz, unitSystem)} {unitWord(unitSystem)}
                 </p>
               )}
               <p className="text-base font-medium">Total {cents(invoiceBill.totalCents, currency?.symbol ?? "$")}</p>
@@ -2222,7 +2248,7 @@ export function Money({
               {leftover.map((l) => (
                 <li key={l.listingId} className="flex flex-col gap-2">
                   <span>
-                    {l.cropName} · {l.harvestedOn} · harvested {l.harvestedOz.toFixed(1)} oz · listed {l.listedOz.toFixed(1)} oz
+                    {l.cropName} · {l.harvestedOn} · harvested {massFigure(l.harvestedOz, unitSystem)} {unitWord(unitSystem)} · listed {massFigure(l.listedOz, unitSystem)} {unitWord(unitSystem)}
                   </span>
                   {/* PACK-LO-SPEAK (audit R-9, ruling 5): a paid listing shows its
                       total once — the same money span wholesale rows use. Unpriced
@@ -2274,7 +2300,7 @@ export function Money({
                   )}
                   {l.paidAt == null && l.paymentLinkUrl != null && (
                     <div className="flex flex-col gap-2">
-                      <p className="text-sm break-all">{linkLabel}: {l.paymentLinkUrl}</p>
+                      <p className="text-sm break-all">{linkLabelFor(l.mintedCurrency)}: {l.paymentLinkUrl}</p>
                       <Button
                         type="button"
                         variant="outline"
@@ -2428,7 +2454,7 @@ export function Money({
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
-                  Ounces
+                  Leftover ({unitWord(unitSystem)})
                   <input
                     className="h-12 rounded-md border border-input bg-card px-3"
                     inputMode="decimal"

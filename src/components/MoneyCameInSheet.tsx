@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import type { IncomeCategory, IncomeRecord } from "@/farm/types";
+import type { FarmCurrencyView, IncomeCategory, IncomeRecord } from "@/farm/types";
 import {
   correctIncome,
   duplicateIncomeWarning,
+  farmCurrency,
   listIncome,
   listIncomeCategories,
   receiptSourceInfo,
@@ -77,7 +78,9 @@ export function MoneyCameInSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingDuplicate, setPendingDuplicate] = useState<string | null>(null);
+  const [currency, setCurrency] = useState<FarmCurrencyView | null>(null);
   const today = toYyyyMmDd(localToday());
+  const symbol = currency?.symbol ?? "$";
 
   const selected = categories.find((c) => c.id === categoryId) ?? null;
   const needsDescriptor = selected?.descriptorRequired ?? false;
@@ -89,12 +92,14 @@ export function MoneyCameInSheet({
 
   async function load() {
     try {
-      const [cats, rows] = await Promise.all([
+      const [cats, rows, cur] = await Promise.all([
         listIncomeCategories(),
         listIncome(),
+        farmCurrency(),
       ]);
       setCategories(cats);
       setRecords(rows);
+      setCurrency(cur);
     } catch (err) {
       setError(errMessage(err));
     }
@@ -487,7 +492,7 @@ export function MoneyCameInSheet({
               <p className="text-sm text-muted-foreground">
                 {records.length}{" "}
                 {records.length === 1 ? "record" : "records"} ·{" "}
-                {formatCents(listTotalCents)}
+                {formatCents(listTotalCents, symbol)}
               </p>
 
               <ul className="flex flex-col gap-2">
@@ -507,7 +512,7 @@ export function MoneyCameInSheet({
                         </span>
                       </span>
                       <span className="shrink-0 tabular-nums">
-                        {formatCents(row.amountCents)}
+                        {formatCents(row.amountCents, symbol)}
                       </span>
                     </button>
                   </li>

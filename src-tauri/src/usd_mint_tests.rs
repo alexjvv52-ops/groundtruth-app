@@ -1,14 +1,22 @@
 //! The mint posts THE FARM'S currency (GT-D26 WORLD-PAY), sealed to usd and
 //! cad this chip; cad is still history at the seal; nothing mints a literal.
 
+use crate::db;
 use crate::events::{EventRecord, Kind};
-use crate::leftover::{self, LeftoverLinkMintedPayload};
+use crate::invoice;
+use crate::leftover::{self, LeftoverLinkMintedPayload, LeftoverListingView};
+use crate::marketing;
+use crate::money::fake::FakeGateway;
 use crate::money::{Offer, OrderBill, StripeGateway};
+use crate::shop;
 use crate::stripe_client::{fake_http::FakeHttp, StripeClient};
-use crate::wholesale::{self, LinkMintedPayload};
+use crate::trays;
+use crate::wholesale::{self, LinkMintedPayload, OrderLine, WholesaleOrderView};
+use rusqlite::Connection;
 use serde_json::json;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn read(rel: &str) -> String {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -211,4 +219,143 @@ fn usd_nothing_mints_cad() {
         2,
         "two mint sites, both the farm's currency"
     );
+}
+
+fn mem() -> Connection {
+    db::open_in_memory().unwrap()
+}
+
+fn venue(conn: &mut Connection) -> marketing::VenueView {
+    marketing::record_venue(conn, "Fixture Cafe", "cafe", None, None, None, None).unwrap()
+}
+
+fn priced_ordered(conn: &mut Connection) -> WholesaleOrderView {
+    let v = venue(conn);
+    let harvest = db::local_date_today();
+    wholesale::record_order(
+        conn,
+        &v.venue_id,
+        &harvest,
+        vec![OrderLine {
+            crop_id: "kale".into(),
+            trays: 1,
+            price_cents_per_tray: Some(600),
+        }],
+        false,
+    )
+    .unwrap()
+}
+
+fn priced_delivered(conn: &mut Connection) -> WholesaleOrderView {
+    let order = priced_ordered(conn);
+    wholesale::deliver_order(conn, &order.id, None).unwrap()
+}
+
+fn temp_dir(label: &str) -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("groundtruth-shop-door-{label}-{stamp}"));
+    fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn set_name(conn: &Connection) {
+    invoice::set_farm_display_name(conn, "Groundtruth Farm").unwrap();
+}
+
+/// Two trays of one crop harvested today at 6.0 oz, listed at 2.0 oz.
+fn listed(conn: &mut Connection, crop_id: &str) -> LeftoverListingView {
+    let mut ids = Vec::new();
+    for _ in 0..2 {
+        let t = trays::sow_tray(conn, crop_id, 1).unwrap();
+        trays::advance_tray(conn, &t.id).unwrap();
+        ids.push(t.id);
+    }
+    trays::harvest_trays(conn, &ids, 6.0).unwrap();
+    leftover::list_leftover(conn, crop_id, &db::local_date_today(), 2.0).unwrap()
+}
+
+fn minted_lot(conn: &mut Connection, crop: &str, cents: i64) -> LeftoverListingView {
+    let lot = listed(conn, crop);
+    leftover::mint_payment_link_with(conn, &FakeGateway::new(), &lot.listing_id, cents).unwrap()
+}
+
+fn page_html(conn: &Connection, dir: &Path) -> String {
+    let written = shop::write_leftover_shop_page(conn, dir).unwrap();
+    fs::read_to_string(&written.file_path).unwrap()
+}
+
+#[test]
+fn link_code_wholesale_view_carries_the_minted_code_not_the_farm_pick() {
+    let mut conn = mem();
+    let order = priced_delivered(&mut conn);
+    let gw = FakeGateway::new();
+    wholesale::mint_payment_link_with(&mut conn, &gw, &order.id).unwrap();
+    crate::currency::set_farm_currency(&conn, "zar").unwrap();
+    assert_eq!(crate::currency::farm_currency(&conn).unwrap(), "zar");
+    let again = wholesale::get_order(&conn, &order.id).unwrap();
+    assert_eq!(
+        again.minted_currency.as_deref(),
+        Some(crate::currency::DEFAULT_CURRENCY)
+    );
+    assert!(again.payment_link_url.is_some());
+}
+
+#[test]
+fn link_code_wholesale_view_is_none_without_a_mint() {
+    let mut conn = mem();
+    let order = priced_delivered(&mut conn);
+    let gw = FakeGateway::new();
+    let again = wholesale::get_order(&conn, &order.id).unwrap();
+    assert_eq!(again.minted_currency, None);
+    assert!(gw.state.lock().unwrap().order_links_created.is_empty());
+}
+
+#[test]
+fn link_code_leftover_view_carries_the_minted_code_not_the_farm_pick() {
+    let mut conn = mem();
+    let lot = minted_lot(&mut conn, "kale", 700);
+    crate::currency::set_farm_currency(&conn, "zar").unwrap();
+    assert_eq!(
+        leftover::get_listing(&conn, &lot.listing_id)
+            .unwrap()
+            .minted_currency
+            .as_deref(),
+        Some(crate::currency::DEFAULT_CURRENCY)
+    );
+    let unminted = listed(&mut conn, "broccoli");
+    let found = leftover::listings(&conn)
+        .unwrap()
+        .into_iter()
+        .find(|l| l.listing_id == unminted.listing_id)
+        .unwrap();
+    assert_eq!(found.minted_currency, None);
+}
+
+#[test]
+fn link_code_shop_lot_names_the_minted_code_never_the_settings_pick() {
+    let mut conn = mem();
+    set_name(&conn);
+    minted_lot(&mut conn, "kale", 700);
+    crate::currency::set_farm_currency(&conn, "zar").unwrap();
+    let html = page_html(&conn, &temp_dir("link-code"));
+    let row = format!(
+        "Kale · harvested {} · 2.0 oz · R7.00 · USD",
+        db::local_date_today()
+    );
+    assert_eq!(html.matches(&row).count(), 1, "{html}");
+    assert!(!html.contains("ZAR"), "{html}");
+    assert_eq!(html.matches(" · USD").count(), 1);
+    assert_eq!(html.matches("Pay online").count(), 1);
+}
+
+#[test]
+fn link_code_shop_word_prints_nothing_without_a_sealed_minted_code() {
+    assert_eq!(crate::shop::lot_iso_word(None), "");
+    assert_eq!(crate::shop::lot_iso_word(Some("xxx")), "");
+    assert_eq!(crate::shop::lot_iso_word(Some("")), "");
+    assert_eq!(crate::shop::lot_iso_word(Some("usd")), " · USD");
+    assert_eq!(crate::shop::lot_iso_word(Some("ZAR")), " · ZAR");
 }

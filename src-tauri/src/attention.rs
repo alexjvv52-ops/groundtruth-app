@@ -443,6 +443,9 @@ pub fn money_debts(conn: &Connection) -> Result<MoneyDebts, String> {
 }
 
 pub fn money_debts_on(conn: &Connection, today: &str) -> Result<MoneyDebts, String> {
+    // PRINT-C (EVIDENCE C): the Collect row prints CODE + amount in the farm
+    // currency. One read per evaluation; every caller of this function holds conn.
+    let currency = crate::currency::farm_currency(conn)?;
     // ---- COLLECT — delivered, unpaid. Oldest first so order matches debt age.
     let mut stmt = conn
         .prepare(
@@ -489,10 +492,13 @@ pub fn money_debts_on(conn: &Connection, today: &str) -> Result<MoneyDebts, Stri
             (true, false) => format!("Collect from {venue_name} — value partly unpriced."),
             (false, true) => format!(
                 "Collect {} — {venue_name}, delivered {}.",
-                dollars(cents),
+                crate::currency::code_amount(&currency, cents),
                 day_phrase(days)
             ),
-            (false, false) => format!("Collect {} — {venue_name}.", dollars(cents)),
+            (false, false) => format!(
+                "Collect {} — {venue_name}.",
+                crate::currency::code_amount(&currency, cents)
+            ),
         };
         collect.push(CollectDebt {
             order_id,
@@ -851,10 +857,6 @@ fn day_phrase(days: i64) -> String {
         1 => "1 day ago".to_string(),
         d => format!("{d} days ago"),
     }
-}
-
-pub(crate) fn dollars(cents: i64) -> String {
-    format!("${}.{:02}", cents / 100, (cents % 100).abs())
 }
 
 /// "Fri Aug 21" — same shape the wholesale overcommit message already uses.

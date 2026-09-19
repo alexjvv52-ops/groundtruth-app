@@ -460,7 +460,11 @@ fn f4b_collect_sentence_drops_age_for_impossible_row() {
         .iter()
         .find(|d| d.order_id == o.id)
         .expect("impossible delivered row must stay in COLLECT");
-    let expected = format!("Collect {} — {}.", attention::dollars(1800), v.name);
+    let expected = format!(
+        "Collect {} — {}.",
+        crate::currency::code_amount("usd", 1800),
+        v.name
+    );
     assert_eq!(row.message, expected);
     assert!(!row.message.contains("delivered"), "{}", row.message);
 }

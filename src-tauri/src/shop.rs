@@ -149,9 +149,6 @@ fn format_price(cents: i64, currency: &str) -> String {
         format!("{dollars}.{rem:02} {}", currency.to_ascii_uppercase())
     }
 }
-fn format_price_cad(cents: i64) -> String {
-    format_price(cents, crate::currency::DEFAULT_CURRENCY)
-}
 
 /// C1 — the cart page's title when Settings has no farm name yet. Never a
 /// brand: the page carries the operator's own name or nothing at all.
@@ -427,6 +424,8 @@ pub fn write_leftover_shop_page(conn: &Connection, folder_path: &Path) -> Result
         .filter(|n| !n.is_empty())
         .ok_or_else(|| crate::invoice::INVOICE_NEEDS_FARM_NAME_LINE.to_string())?;
     let lots = shop_door_lots(conn)?;
+    let units_system = crate::units::farm_units(conn)?;
+    let currency = crate::currency::farm_currency(conn)?;
     let mut harvest_dates: Vec<String> = Vec::new();
     for lot in &lots {
         if !harvest_dates.contains(&lot.harvested_on) {
@@ -435,7 +434,7 @@ pub fn write_leftover_shop_page(conn: &Connection, folder_path: &Path) -> Result
     }
     let generated_at = db::utc_now_rfc3339();
     let as_of = format_as_of_line(Local::now());
-    let html = render_leftover_html(&farm_name, &lots, &as_of);
+    let html = render_leftover_html(&farm_name, &lots, &as_of, &units_system, &currency);
     let bytes = html.as_bytes();
     if bytes.len() >= 100 * 1024 {
         return Err(format!(
@@ -463,8 +462,22 @@ pub fn write_leftover_shop_page(conn: &Connection, folder_path: &Path) -> Result
     })
 }
 
+/// LINK-CODE (SHOP A + FALLBACK A). The ISO word after a lot's price
+/// names the code its Payment Link was minted in — read from the mint
+/// event, never from Settings. No code, or one this build has not
+/// sealed, prints nothing: the price keeps the farm pick (PRINT-C) and
+/// no stand-in fills the word.
+pub(crate) fn lot_iso_word(minted: Option<&str>) -> String {
+    match minted {
+        Some(code) if crate::currency::is_sealed(code) => {
+            format!(" · {}", code.trim().to_ascii_uppercase())
+        }
+        _ => String::new(),
+    }
+}
+
 /// Page bytes. Identity line = the farm display name (no brand string). One
-/// row per lot: crop · harvested day · listed oz · price, then the stored
+/// row per lot: crop · harvested day · listed oz · price · the minted ISO code when the mint event carries a sealed one, then the stored
 /// payment_link_url — verbatim, as the link and as its text — behind the
 /// bill's own words "Pay online:". No script, no cart, no third-party origin,
 /// and no code image: one 49-module symbol drawn as rects costs more bytes
@@ -473,6 +486,8 @@ fn render_leftover_html(
     farm_name: &str,
     lots: &[crate::leftover::LeftoverListingView],
     as_of: &str,
+    units_system: &str,
+    currency: &str,
 ) -> String {
     let mut lots_html = String::new();
     for lot in lots {
@@ -480,16 +495,26 @@ fn render_leftover_html(
         else {
             continue;
         };
+        let mass = if units_system == "metric" {
+            format!(
+                "{} {}",
+                crate::units::grams(lot.listed_oz),
+                crate::units::unit_for(units_system)
+            )
+        } else {
+            format!("{:.1} oz", lot.listed_oz)
+        };
         lots_html.push_str(&format!(
             r#"<li class="lot">
-<p class="line">{crop} · harvested {day} · {oz:.1} oz · {price}</p>
+<p class="line">{crop} · harvested {day} · {mass} · {price}{iso}</p>
 <p class="pay">Pay online: <a href="{url}">{url}</a></p>
 </li>
 "#,
             crop = esc(&lot.crop_name),
             day = esc(&lot.harvested_on),
-            oz = lot.listed_oz,
-            price = format_price_cad(cents),
+            mass = mass,
+            price = format_price(cents, currency),
+            iso = lot_iso_word(lot.minted_currency.as_deref()),
             url = esc(url),
         ));
     }

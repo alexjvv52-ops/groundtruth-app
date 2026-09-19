@@ -280,6 +280,11 @@ export type WholesaleOrderView = {
   paymentLinkId: string | null;
   paymentLinkUrl: string | null;
   paymentLinkMintedAt: string | null;
+  /** LINK-CODE (VIEW A): the ISO code this row's Payment Link was minted in,
+   *  read at list time from the live wholesale.link_minted event. null when no
+   *  link was minted or the mint carries no readable code (FALLBACK A).
+   *  Never the Settings pick. */
+  mintedCurrency: string | null;
 };
 
 /** C-2 (SOP-2): read-only. One pack per venue for that harvest date.
@@ -311,6 +316,11 @@ export type LeftoverListingView = {
   pricedTotalCents: number | null;
   paidSessionId: string | null;
   paidAt: string | null;
+  /** LINK-CODE (VIEW A): the ISO code this listing's Payment Link was minted in,
+   *  read at list time from the live leftover.link_minted event — computed at
+   *  read like harvestedOz, never stored. null when no link was minted or the
+   *  mint carries no readable code (FALLBACK A). Never the Settings pick. */
+  mintedCurrency: string | null;
 };
 
 /** SEED-A (GT-D25). One seed.received row: crop id + ounces at 0.1, the event's createdAt.
@@ -916,4 +926,15 @@ export type FarmCurrencyView = {
   name: string;
   symbol: string;
   choices: CurrencyChoice[];
+};
+/** GT-D27 UNITS: the display system this desk prints mass in. Config, not an event. */
+export type UnitsChoice = {
+  system: string;
+  name: string;
+};
+export type FarmUnitsView = {
+  system: string;
+  name: string;
+  unit: string;
+  choices: UnitsChoice[];
 };

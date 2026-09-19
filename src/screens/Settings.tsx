@@ -3,6 +3,7 @@ import type {
   AdminPhoneView,
   DockPortView,
   FarmCurrencyView,
+  FarmUnitsView,
   PairingView,
   ScanConfigView,
 } from "@/farm/types";
@@ -15,9 +16,11 @@ import {
   farmLocation,
   farmDisplayName,
   farmPayInstructions,
+  farmUnits,
   setFarmCurrency,
   setFarmDisplayName,
   setFarmPayInstructions,
+  setFarmUnits,
   pairAdminPhone,
   retireAdminPhone,
   scanConfig,
@@ -51,6 +54,8 @@ const CONNECTIONS_COPY =
 const CONNECTIONS_BLANK = "Left blank — scan endpoint not configured.";
 const DOCK_HOW_COPY =
   "On the phone: join the same Wi-Fi as this PC, turn off cellular data, then open the address below. Pair the Admin phone first — the Dock uses that token. This is not the scan endpoint. This address is not encrypted. Use it only on Wi-Fi you trust.";
+const UNITS_COPY =
+  "The units this desk prints weights in. Harvest receipts, yield per tray, seed and leftover lines use it. The books weigh in ounces and stay that way — changing this rewrites nothing. A harvest weighed at 12.0 oz stays 12.0 oz in the file and prints as 340 g.";
 
 function FarmNameSection() {
   const [name, setName] = useState("");
@@ -168,6 +173,62 @@ function FarmCurrencySection() {
             {(view?.choices ?? []).map((c) => (
               <option key={c.code} value={c.code}>
                 {c.name} ({c.code.toUpperCase()})
+              </option>
+            ))}
+          </select>
+        </label>
+        {error != null && (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FarmUnitsSection() {
+  const [view, setView] = useState<FarmUnitsView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void (async () => {
+      try {
+        setView(await farmUnits());
+      } catch (e) {
+        setError(errMessage(e));
+      }
+    })();
+  }, []);
+  async function onPick(system: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      setView(await setFarmUnits(system));
+    } catch (e) {
+      setError(errMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Units</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">{UNITS_COPY}</p>
+        <label className="flex flex-col gap-1 text-sm">
+          Units
+          <select
+            className="h-12 rounded-md border border-input bg-card px-3"
+            value={view?.system ?? ""}
+            disabled={busy || view == null}
+            onChange={(e) => void onPick(e.target.value)}
+          >
+            {(view?.choices ?? []).map((c) => (
+              <option key={c.system} value={c.system}>
+                {c.name}
               </option>
             ))}
           </select>
@@ -790,6 +851,7 @@ export function Settings() {
       </Card>
       <FarmNameSection />
       <FarmCurrencySection />
+      <FarmUnitsSection />
       <FarmPayInstructionsSection />
       <FarmBackupSheet
         open={backupOpen}

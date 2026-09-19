@@ -553,7 +553,8 @@ pub fn duplicate_income_warning(
     let Some((venue, d)) = matched else {
         return Ok(None);
     };
-    let amount = crate::attention::dollars(amount_cents);
+    let currency = crate::currency::farm_currency(conn)?;
+    let amount = crate::currency::code_amount(&currency, amount_cents);
     let d = crate::reachability::format_mon_d_local(&d)?;
     Ok(Some(format!(
         "{venue} already has {amount} recorded on {d}. Recording this again makes two income rows for one payment."

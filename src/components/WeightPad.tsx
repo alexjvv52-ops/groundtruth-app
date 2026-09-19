@@ -9,6 +9,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { ErrorLine } from "@/components/ErrorLine";
 import { MoneyJustLeftSheet } from "@/components/MoneyJustLeftSheet";
+import { massFigure, unitWord } from "@/farm/mass";
+import { typedOunces } from "@/farm/typed";
 
 export type HarvestDoneMeta = {
   trayCount: number;
@@ -23,11 +25,8 @@ type WeightPadProps = {
   groups: HarvestGroup[];
   onDone: (groups: HarvestInput[], meta: HarvestDoneMeta) => void;
   onDiscarded: (info: { trayCount: number; cropName: string }) => void;
+  unitSystem: string;
 };
-
-function formatOz(n: number): string {
-  return n.toFixed(1);
-}
 
 function trayWord(n: number): string {
   return `${n} ${n === 1 ? "tray" : "trays"}`;
@@ -39,6 +38,7 @@ export function WeightPad({
   groups,
   onDone,
   onDiscarded,
+  unitSystem,
 }: WeightPadProps) {
   const [liveGroups, setLiveGroups] = useState<HarvestGroup[]>([]);
   const [step, setStep] = useState(0);
@@ -65,7 +65,7 @@ export function WeightPad({
 
   useEffect(() => {
     if (open && groups.length > 0) {
-      const initial = groups.map((g) => formatOz(g.estimatedYieldOz));
+      const initial = groups.map((g) => massFigure(g.estimatedYieldOz, unitSystem));
       setLiveGroups(groups);
       setValues(initial);
       setStep(0);
@@ -83,7 +83,7 @@ export function WeightPad({
 
   function loadStep(i: number, stored: string[], nextGroups: HarvestGroup[]) {
     setStep(i);
-    setDisplay(stored[i] ?? formatOz(nextGroups[i]?.estimatedYieldOz ?? 0));
+    setDisplay(stored[i] ?? massFigure(nextGroups[i]?.estimatedYieldOz ?? 0, unitSystem));
     setReplaced(false);
     setMode("weight");
   }
@@ -146,7 +146,7 @@ export function WeightPad({
     if (!stored) return;
     const inputs: HarvestInput[] = liveGroups.map((g, i) => ({
       trayIds: g.trayIds,
-      actualYieldOz: Number.parseFloat(stored[i]),
+      actualYieldOz: typedOunces(stored[i], unitSystem),
     }));
     onDone(inputs, {
       trayCount: liveGroups.reduce((s, g) => s + g.trayCount, 0),
@@ -175,7 +175,7 @@ export function WeightPad({
         const nextGroups = [...liveGroups];
         nextGroups[step] = remaining;
         const nextValues = [...values];
-        const pref = formatOz(remaining.estimatedYieldOz);
+        const pref = massFigure(remaining.estimatedYieldOz, unitSystem);
         nextValues[step] = pref;
         setLiveGroups(nextGroups);
         setValues(nextValues);
@@ -335,11 +335,11 @@ export function WeightPad({
                 >
                   {display || "0"}
                 </div>
-                {!replaced && (
-                  <p className="text-center text-sm text-muted-foreground">
-                    estimate — type what the scale says
-                  </p>
-                )}
+                <p className="text-center text-sm text-muted-foreground">
+                  {replaced
+                    ? unitWord(unitSystem)
+                    : `estimate — type what the scale says (${unitWord(unitSystem)})`}
+                </p>
 
                 <div className="grid grid-cols-3 gap-3">
                   {keys.map((key) => (

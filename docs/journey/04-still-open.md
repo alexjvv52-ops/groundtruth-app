@@ -1,16 +1,16 @@
 # Still open
-Named rather than hidden. This is the honest floor as of release 0.1.3
-(2026-09-17). Each item says what would close it. None of them is a
+Named rather than hidden. This is the honest floor as of tip `455b2e2`
+(2026-09-02). Each item says what would close it. None of them is a
 second product philosophy; they are packaging, reach, and scope.
 ## Open
 | Item | State | What closes it |
 |------|-------|----------------|
-| Public installer pack | Closed. Unsigned Windows installers are published on the Releases page (v0.1.0, 0.1.1, 0.1.2, 0.1.3), each with the SHA-256 GitHub shows under the asset. | Code-signing, if it ever earns its yearly cost. SmartScreen warns until then. |
-| Security sweep | Run before 0.1.2: a full-tree red-team pass, then payment-link retirement, import-path hardening, a checkout price gate, a duplicate-reference fact, a dock accept deadline, and the Stripe key and pull token sealed at rest. What was declined on purpose is on the manual's [Refused](../manual/refused.md) page. | A second pass whenever a new door is added. |
+| Public installer pack | The app is built from source. An unsigned Windows installer builds locally, but there is deliberately no download link yet. | A published release with checksums, after the security sweep. |
+| Security sweep | Not yet run as a formal pass. It is the last blocker before a public home for the repository. | A signed sweep of the tree for anything that must never ship. |
 | Dead-laptop recovery drill | Written, never run end to end, and removed from scope for now. Restore from an export bundle is tested; the full cold-machine drill is not. | Running the drill on a fresh machine and recording the result. Until then, keep the old machine or a USB copy after any move. |
 | Windows only, one machine, one user | By design for v0.1. | Not a residual — a scope line. A read-only second presence is a later, signed piece of work. |
 | Offline See on the phone | The phone sees the desk's snapshot only while on the same network with the desk running. TLS on the dock was declined; an offline See surface would need its own signature. | A signed decision, if the board ever wants it. |
-| Internationalization | The laws travel; the chrome does not. Copy is English, paper sizes and date formats follow the desk, crop defaults are microgreens. | Forks for language, currency, and regional crop packs — invited, under the same laws. |
+| Internationalization | The laws travel; the chrome does not. Copy is English, paper sizes and date formats follow the desk, crop defaults are microgreens. | Forks for language, currency, and regional crop packs — invited, under the same laws. A currency abstraction inside the core would be its own signed residual. |
 | Unbounded disk flush on a stuck volume | A known mechanism, with every production call site inventoried and a trip condition signed: revisit if the app ever freezes on write, launch, or close, or if the farm file moves to a network, removable, or encrypted volume. | The trip condition firing. Not a hidden risk; a watched one. |
 ## Declined, so not open
 - A step vocabulary on the phone wire. The phone shows full PC sentences.

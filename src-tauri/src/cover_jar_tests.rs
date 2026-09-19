@@ -29,6 +29,16 @@ fn short_tail(x: f64) -> String {
     format!(" The jar is short {x:.1} oz — record seed in on Farm, then sow.")
 }
 
+/// The same tail in grams. Through `units::grams` and `units::unit_for` — never
+/// a hand-typed gram figure.
+fn short_tail_metric(oz: f64) -> String {
+    format!(
+        " The jar is short {} {} — record seed in on Farm, then sow.",
+        crate::units::grams(oz),
+        crate::units::unit_for("metric")
+    )
+}
+
 fn mem() -> Connection {
     db::open_in_memory().unwrap()
 }
@@ -516,4 +526,58 @@ fn hj9_the_attention_row_carries_the_tail() {
     assert!(reachability::jar_empty(c), "{c:?}");
     assert_eq!(row.message, c.message);
     assert!(row.message.ends_with(EMPTY_TAIL), "{}", row.message);
+}
+
+#[test]
+fn hj10_a_short_jar_prints_grams_when_the_farm_reads_metric() {
+    let today = today();
+    // 6.0 in, 8.0 out reads short 2.0; 6.0 in, 8.4 out reads short 2.4.
+    for (sown, short) in [(8.0_f64, 2.0_f64), (8.4_f64, 2.4_f64)] {
+        let mut conn = mem();
+        seed::receive_seed(&mut conn, "dun-peas", 6.0).unwrap();
+        trays::sow_tray_with_seed(&mut conn, "dun-peas", 1, Some(sown)).unwrap();
+        let harvest = add_days(&today, 14);
+        order_trays(&mut conn, &harvest, "dun-peas", 3);
+        // Imperial is the shipped default: the signed bytes are unchanged.
+        let plan = reachability::cover_plan_on(&conn, &today).unwrap();
+        let c = cover_for(&plan, &harvest, "dun-peas");
+        assert!(c.message.ends_with(&short_tail(short)), "{}", c.message);
+        // The pick moves the face and nothing else. The jar still holds ounces.
+        crate::units::set_farm_units(&conn, "metric").unwrap();
+        let plan = reachability::cover_plan_on(&conn, &today).unwrap();
+        let c = cover_for(&plan, &harvest, "dun-peas");
+        assert_eq!(
+            c.jar_on_hand_oz,
+            Some(-short),
+            "the file still weighs in oz"
+        );
+        assert!(
+            c.message.ends_with(&short_tail_metric(short)),
+            "{}",
+            c.message
+        );
+        assert!(!c.message.contains(" oz"), "{}", c.message);
+        assert!(reachability::jar_empty(c), "{c:?}");
+        // And back: changing the pick converts nothing written.
+        crate::units::set_farm_units(&conn, "imperial").unwrap();
+        let plan = reachability::cover_plan_on(&conn, &today).unwrap();
+        let c = cover_for(&plan, &harvest, "dun-peas");
+        assert!(c.message.ends_with(&short_tail(short)), "{}", c.message);
+    }
+}
+
+#[test]
+fn hj11_the_empty_tail_is_the_same_bytes_in_both_systems() {
+    let mut conn = mem();
+    let today = today();
+    empty_the_jar(&mut conn, "dun-peas");
+    let harvest = add_days(&today, 14);
+    order_trays(&mut conn, &harvest, "dun-peas", 3);
+    for system in ["imperial", "metric"] {
+        crate::units::set_farm_units(&conn, system).unwrap();
+        let plan = reachability::cover_plan_on(&conn, &today).unwrap();
+        let c = cover_for(&plan, &harvest, "dun-peas");
+        // No figure, no unit word: an empty jar says the same thing either way.
+        assert!(c.message.ends_with(EMPTY_TAIL), "{system}: {}", c.message);
+    }
 }

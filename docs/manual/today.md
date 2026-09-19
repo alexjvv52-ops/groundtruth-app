@@ -30,10 +30,6 @@ large card; the rest sit as cards. Receipts sort below every live row.
 
 ## Doors on this tab
 
-- The rack (strip under the title) - writes nothing - one cell per
-  live tray, dark under lights, grey in blackout, hollow up to the
-  shelf ceiling from Settings › Shelf space. "ceiling not set" means
-  Light and Blackout slots are blank there. ▸ opens the rows.
 - **Collect** - writes nothing - opens Money on that unpaid row.
 - **Deliver** - writes nothing - opens Money on that ordered row.
 - **Sow** - `tray.sown` and `consumption.physical` (seed ounces only
@@ -56,6 +52,8 @@ large card; the rest sit as cards. Receipts sort below every live row.
   a note on the receipt. Not capacity. Not money.
 - **List leftover** - `leftover.listed` - ounces from this harvest
   day, once.
+- The harvest receipt prints oz or g from the Units pick; the file
+  still stores ounces.
 - **Gone** - writes nothing - hides the leftover prompt on this
   receipt only.
 - **Dismiss** - `attention.resolved` - closes that attention card.

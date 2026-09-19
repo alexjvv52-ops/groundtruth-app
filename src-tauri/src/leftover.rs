@@ -164,6 +164,10 @@ pub struct LeftoverListingView {
     pub priced_total_cents: Option<i64>,
     pub paid_session_id: Option<String>,
     pub paid_at: Option<String>,
+    /// LINK-CODE (VIEW A). The ISO code the listing's Payment Link was
+    /// minted in, read at list time from the live leftover.link_minted
+    /// event — computed at read like harvested_oz, never stored.
+    pub minted_currency: Option<String>,
 }
 
 /// Ounces are stored and compared at 0.1 — the WeightPad's own precision.
@@ -771,6 +775,7 @@ pub fn owed_leftover(conn: &Connection) -> Result<LeftoverOwed, String> {
 /// Read side. harvested_oz is computed here from the trays, never stored, so
 /// an undone harvest shows as it is: harvested 0 oz beside the listed ounces.
 pub fn listings(conn: &Connection) -> Result<Vec<LeftoverListingView>, String> {
+    let minted = crate::events::minted_codes(conn, Kind::LeftoverLinkMinted)?;
     let mut stmt = conn
         .prepare(
             "SELECT l.listing_id, l.crop_id, c.name, l.harvested_on, l.listed_oz, l.created_at,
@@ -786,8 +791,10 @@ pub fn listings(conn: &Connection) -> Result<Vec<LeftoverListingView>, String> {
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map([], |r| {
+            let listing_id: String = r.get(0)?;
+            let minted_currency = minted.get(&listing_id).cloned();
             Ok(LeftoverListingView {
-                listing_id: r.get(0)?,
+                listing_id,
                 crop_id: r.get(1)?,
                 crop_name: r.get(2)?,
                 harvested_on: r.get(3)?,
@@ -800,6 +807,7 @@ pub fn listings(conn: &Connection) -> Result<Vec<LeftoverListingView>, String> {
                 paid_session_id: r.get(10)?,
                 paid_at: r.get(11)?,
                 harvested_oz: round_tenth(r.get(12)?),
+                minted_currency,
             })
         })
         .map_err(|e| e.to_string())?;

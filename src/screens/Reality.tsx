@@ -23,6 +23,7 @@ import {
   discardPhoneCapture,
   dismissAttention,
   farmLocation,
+  farmUnits,
   harvestCommitments,
   listCrops,
   phoneCaptures,
@@ -36,6 +37,8 @@ import {
   dockFolds,
 } from "@/farm/api";
 import { estWeekday, monthDayLabel, snapshotLabel } from "@/farm/dates";
+import { DEFAULT_UNITS, grams, massFigure, unitWord } from "@/farm/mass";
+import { typedOunces } from "@/farm/typed";
 import {
   Card,
   CardContent,
@@ -62,19 +65,20 @@ function sinceLabel(stamp: string): string {
   return Number.isNaN(d.getTime()) ? stamp : monthDayLabel(d);
 }
 // JAR-READER Job B — one muted line per crop with a receipt (SCOPE A). Every
-// figure is the reader's (seedOnHand); nothing is computed here. Ounces at one
-// decimal, as the confirm card prints them. BLANK A: onHandOz null is printed
+// figure is the reader's (seedOnHand); nothing is computed here. Printed in the
+// desk's units (GT-D27 UNITS), display only. BLANK A: onHandOz null is printed
 // as unknown, never as a number. NEGATIVE A: short is printed, never clamped.
-function jarLine(row: SeedOnHandRow): string {
+function jarLine(row: SeedOnHandRow, system: string): string {
   const since = sinceLabel(row.since);
   if (row.onHandOz === null) {
     return `${row.cropName} · on hand unknown · ${row.unweighedSows} sows since ${since} recorded no seed weight`;
   }
-  const inOut = `${row.receivedOz.toFixed(1)} in, ${row.sownOz.toFixed(1)} sown since ${since}`;
+  const u = unitWord(system);
+  const inOut = `${massFigure(row.receivedOz, system)} in, ${massFigure(row.sownOz, system)} sown since ${since}`;
   if (row.onHandOz < 0) {
-    return `${row.cropName} · ${Math.abs(row.onHandOz).toFixed(1)} oz short · ${inOut}`;
+    return `${row.cropName} · ${massFigure(Math.abs(row.onHandOz), system)} ${u} short · ${inOut}`;
   }
-  return `${row.cropName} · ${row.onHandOz.toFixed(1)} oz on hand · ${inOut}`;
+  return `${row.cropName} · ${massFigure(row.onHandOz, system)} ${u} on hand · ${inOut}`;
 }
 const actionCardClass =
   "flex min-h-24 cursor-pointer items-center justify-center p-8 text-center text-xl font-medium transition-colors active:translate-y-px hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
@@ -95,6 +99,9 @@ type LastAction =
  */
 export function Reality({ pollTick = 0 }: { pollTick?: number }) {
   const [crops, setCrops] = useState<Crop[]>([]);
+  // GT-D27 UNITS (J2) - display only; Farm's write paths still carry ounces.
+  // Imperial until the desk answers, and imperial if it never does (STORE B).
+  const [unitSystem, setUnitSystem] = useState<string>(DEFAULT_UNITS);
   const [view, setView] = useState<TodayView | null>(null);
   const [attention, setAttention] = useState<AttentionItem[]>([]);
   const [demand, setDemand] = useState<StandingDemandView | null>(null);
@@ -176,6 +183,12 @@ export function Reality({ pollTick = 0 }: { pollTick?: number }) {
       try {
         const c = await listCrops();
         if (!cancelled) setCrops(c);
+        try {
+          const u = await farmUnits();
+          if (!cancelled) setUnitSystem(u.system);
+        } catch (e) {
+          console.error(e);
+        }
         await refresh();
         await refreshBackupLine();
       } catch (err) {
@@ -261,7 +274,7 @@ export function Reality({ pollTick = 0 }: { pollTick?: number }) {
   async function handleSeedRecorded(receipt: SeedReceiptView) {
     setLastAction({
       kind: "seed_received",
-      line: `Seed in — ${receipt.receivedOz.toFixed(1)} oz of ${receipt.cropName}.`,
+      line: `Seed in — ${massFigure(receipt.receivedOz, unitSystem)} ${unitWord(unitSystem)} of ${receipt.cropName}.`,
     });
     try {
       setLastError(null);
@@ -530,11 +543,13 @@ export function Reality({ pollTick = 0 }: { pollTick?: number }) {
                             </div>
                             {v.verb === "harvest" && (
                               <label className="flex items-center gap-2 text-sm">
-                                <input type="number" inputMode="decimal" min="0" step="0.1"
-                                  value={d.actualYieldOz ?? ""}
-                                  onChange={(e) => setDraft(v, { actualYieldOz: e.target.value === "" ? null : Number(e.target.value) })}
+                                <input type="number" inputMode="decimal" min="0" step={unitSystem === "metric" ? "1" : "0.1"}
+                                  value={d.actualYieldOz == null
+                                    ? ""
+                                    : unitSystem === "metric" ? String(grams(d.actualYieldOz)) : String(d.actualYieldOz)}
+                                  onChange={(e) => setDraft(v, { actualYieldOz: e.target.value === "" ? null : typedOunces(e.target.value, unitSystem) })}
                                   className="h-11 w-24 rounded-md border px-2 text-base tabular-nums" />
-                                oz
+                                {unitWord(unitSystem)}
                               </label>
                             )}
                           </div>
@@ -640,12 +655,12 @@ export function Reality({ pollTick = 0 }: { pollTick?: number }) {
               <div className="flex flex-col gap-1">
                 {jar.map((row) => (
                   <p key={row.cropId} className="text-sm text-muted-foreground">
-                    {jarLine(row)}
+                    {jarLine(row, unitSystem)}
                   </p>
                 ))}
                 {jar[0].unattributedOz > 0 && (
                   <p className="text-sm text-muted-foreground">
-                    {`${jar[0].unattributedOz.toFixed(1)} oz not tied to a crop`}
+                    {`${massFigure(jar[0].unattributedOz, unitSystem)} ${unitWord(unitSystem)} not tied to a crop`}
                   </p>
                 )}
               </div>
@@ -673,6 +688,7 @@ export function Reality({ pollTick = 0 }: { pollTick?: number }) {
         onSow={handleSow}
         demand={demand}
         coverDates={cover}
+        unitSystem={unitSystem}
       />
       <RecountSheet
         open={recountOpen}
@@ -682,6 +698,7 @@ export function Reality({ pollTick = 0 }: { pollTick?: number }) {
       <CropsSheet
         open={cropsOpen}
         onOpenChange={setCropsOpen}
+        unitSystem={unitSystem}
         onSaved={() => {
           void listCrops().then(setCrops).catch(console.error);
         }}
@@ -691,6 +708,7 @@ export function Reality({ pollTick = 0 }: { pollTick?: number }) {
         onOpenChange={setSeedInOpen}
         crops={crops}
         onRecorded={handleSeedRecorded}
+        unitSystem={unitSystem}
       />
       <FarmBackupSheet
         open={backupOpen}

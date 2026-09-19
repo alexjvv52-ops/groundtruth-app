@@ -440,8 +440,13 @@ pub fn capture_age_label(phone_captured_at: &str, now_utc: &str) -> Result<Strin
         )),
     }
 }
-fn oz1(oz: f64) -> String {
-    format!("{oz:.1}")
+/// Twin of mass.ts massFigure.
+fn mass_figure(oz: f64, units_system: &str) -> String {
+    if units_system == "metric" {
+        crate::units::grams(oz).to_string()
+    } else {
+        format!("{oz:.1}")
+    }
 }
 /// Pending-capture card. Also the attention row's message.
 pub fn capture_message(
@@ -451,12 +456,14 @@ pub fn capture_message(
     oz: Option<f64>,
     age: &str,
     note: Option<&str>,
+    units_system: &str,
 ) -> String {
     let t = tray_word(trays);
     let mut m = if verb == VERB_HARVEST {
         format!(
-            "Harvest {t} of {crop_name}, {} oz — captured {age}.",
-            oz1(oz.unwrap_or(0.0))
+            "Harvest {t} of {crop_name}, {figure} {unit} — captured {age}.",
+            figure = mass_figure(oz.unwrap_or(0.0), units_system),
+            unit = crate::units::unit_for(units_system)
         )
     } else {
         format!("Move {t} of {crop_name} to light — captured {age}.")
@@ -473,12 +480,14 @@ pub fn confirmation_line(
     crop_name: &str,
     oz: Option<f64>,
     age: &str,
+    units_system: &str,
 ) -> String {
     let t = tray_word(trays);
     if verb == VERB_HARVEST {
         format!(
-            "Recorded from phone capture — {t} of {crop_name}, {} oz (captured {age}).",
-            oz1(oz.unwrap_or(0.0))
+            "Recorded from phone capture — {t} of {crop_name}, {figure} {unit} (captured {age}).",
+            figure = mass_figure(oz.unwrap_or(0.0), units_system),
+            unit = crate::units::unit_for(units_system)
         )
     } else {
         format!("Recorded from phone capture — {t} of {crop_name} to light (captured {age}).")
@@ -718,6 +727,7 @@ pub fn confirm_phone_captures(
     let mut written = Vec::new();
     let mut blocked_rows = Vec::new();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let units_system = crate::units::farm_units(&tx)?;
     for a in accepted {
         let row = get_proposal(&tx, &a.proposal_id)?;
         if row.decided_at.is_some() {
@@ -770,7 +780,7 @@ pub fn confirm_phone_captures(
                 let age = capture_age_label(&row.phone_captured_at, &now)?;
                 written.push(WrittenCapture {
                     proposal_id: row.proposal_id.clone(),
-                    line: confirmation_line(&row.verb, a.quantity, &name, oz, &age),
+                    line: confirmation_line(&row.verb, a.quantity, &name, oz, &age, &units_system),
                     applied_event_ids: vec![applied_id],
                 });
             }
@@ -839,6 +849,7 @@ pub fn discard_phone_capture(
 /// sentence, so an open row's message is refreshed (raise_or_refresh precedent).
 pub fn raise_phone_proposals(conn: &Connection) -> Result<(), String> {
     let now = db::utc_now_rfc3339();
+    let units_system = crate::units::farm_units(conn)?;
     for row in open_proposals(conn)? {
         let name = crop_name(conn, &row.crop_id)?;
         let age = capture_age_label(&row.phone_captured_at, &now)?;
@@ -849,6 +860,7 @@ pub fn raise_phone_proposals(conn: &Connection) -> Result<(), String> {
             row.actual_yield_oz,
             &age,
             row.note.as_deref(),
+            &units_system,
         );
         attention::raise(
             conn,
@@ -886,6 +898,7 @@ pub struct PhoneCaptureView {
 }
 pub fn phone_captures(conn: &Connection) -> Result<Vec<PhoneCaptureView>, String> {
     let now = db::utc_now_rfc3339();
+    let units_system = crate::units::farm_units(conn)?;
     open_proposals(conn)?
         .into_iter()
         .map(|row| {
@@ -898,6 +911,7 @@ pub fn phone_captures(conn: &Connection) -> Result<Vec<PhoneCaptureView>, String
                 row.actual_yield_oz,
                 &age,
                 row.note.as_deref(),
+                &units_system,
             );
             Ok(PhoneCaptureView {
                 proposal_id: row.proposal_id,

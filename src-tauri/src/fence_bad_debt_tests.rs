@@ -377,12 +377,13 @@ fn bad_debt_rows(conn: &Connection) -> i64 {
 fn bad_debt_confirm_line_is_the_signed_sentence() {
     let mut conn = mem();
     let (order_id, _, _) = delivered_order(&mut conn);
+    crate::currency::set_farm_currency(&conn, "zar").unwrap();
     let line = wholesale::bad_debt_confirm_line(&conn, &order_id)
         .unwrap()
         .expect("delivered priced order must offer a confirm line");
     assert_eq!(
         line,
-        "Write off $16.00 from Fixture Cafe as bad debt? The delivery stands \
+        "Write off ZAR 16.00 from Fixture Cafe as bad debt? The delivery stands \
          and the trays stay committed. No payment is recorded. This cannot be \
          undone."
     );
@@ -647,7 +648,7 @@ fn bad_debt_trail_line_is_the_signed_sentence() {
         line,
         format!(
             "{} written off as bad debt on {}. The trays stay committed and no payment was recorded.",
-            crate::attention::dollars(1600),
+            crate::currency::code_amount("usd", 1600),
             crate::reachability::format_mon_d_local(&db::local_date_today()).unwrap()
         )
     );

@@ -45,6 +45,7 @@ mod standing_pull;
 mod storefront;
 mod stripe_client;
 mod trays;
+mod units;
 mod wholesale;
 
 #[cfg(test)]
@@ -410,6 +411,8 @@ pub fn run() {
                 commands::set_farm_currency,
                 commands::farm_pay_instructions,
                 commands::set_farm_pay_instructions,
+                commands::farm_units,
+                commands::set_farm_units,
                 commands::wholesale_invoice_bill,
                 commands::leftover_invoice_bill,
                 commands::list_wholesale_orders,
@@ -590,6 +593,8 @@ pub fn run() {
                 commands::set_farm_currency,
                 commands::farm_pay_instructions,
                 commands::set_farm_pay_instructions,
+                commands::farm_units,
+                commands::set_farm_units,
                 commands::wholesale_invoice_bill,
                 commands::leftover_invoice_bill,
                 commands::list_wholesale_orders,

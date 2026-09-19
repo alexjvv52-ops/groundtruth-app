@@ -19,6 +19,7 @@ import type {
   ExportResult,
   FarmCurrencyView,
   FarmLocation,
+  FarmUnitsView,
   ImportPlan,
   ImportResult,
   HarvestGroup,
@@ -1168,6 +1169,13 @@ export function farmCurrency(): Promise<FarmCurrencyView> {
 }
 export function setFarmCurrency(code: string): Promise<FarmCurrencyView> {
   return invoke("set_farm_currency", { code });
+}
+/** GT-D27 UNITS: the display system this desk prints mass in - config on farm_config, not an event. */
+export function farmUnits(): Promise<FarmUnitsView> {
+  return invoke("farm_units");
+}
+export function setFarmUnits(system: string): Promise<FarmUnitsView> {
+  return invoke("set_farm_units", { system });
 }
 /** GT-D26 WORLD-PAY (ONRAMP B): the farmer's own how-to-pay line — config on farm_config, not an event. */
 export function farmPayInstructions(): Promise<string | null> { return invoke("farm_pay_instructions"); }

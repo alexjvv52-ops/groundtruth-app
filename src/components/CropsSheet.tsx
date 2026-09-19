@@ -13,11 +13,16 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { grams, perTrayUnit } from "@/farm/mass";
+import { typedOunces } from "@/farm/typed";
 
 type CropsSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
+  /** GT-D27 UNITS (J2) - the desk's display system, for the rate column only.
+   *  Both editor fields are typed in the desk's units and converted to ounces before the command. */
+  unitSystem: string;
 };
 
 type Draft =
@@ -35,6 +40,8 @@ type Draft =
       growthDays: string;
       blackoutDays: string;
       seedRate: string;
+      /** UNITS J6-R6 REOPEN A - true once the operator has typed in the field. */
+      seedRateDirty: boolean;
     };
 
 function errMessage(err: unknown): string {
@@ -43,16 +50,17 @@ function errMessage(err: unknown): string {
   return "Could not save. Try again.";
 }
 
-function formatRate(rate: number | null): string {
+function formatRate(rate: number | null, system: string): string {
   if (rate == null) return "—";
-  return `${rate} oz/tray`;
+  const figure = system === "metric" ? String(grams(rate)) : String(rate);
+  return `${figure} ${perTrayUnit(system)}`;
 }
 
-/** Blank → null. Non-blank → number (Rust owns validation). */
-export function rateFieldToValue(raw: string): number | null {
+/** UNITS J6-FOLD, FOLD B. Blank → null. Non-blank → typedOunces (Rust owns validation). */
+export function rateFieldToValue(raw: string, system: string): number | null {
   const trimmed = raw.trim();
   if (trimmed === "") return null;
-  return Number(trimmed);
+  return typedOunces(trimmed, system);
 }
 
 const FIELD =
@@ -62,6 +70,7 @@ export function CropsSheet({
   open,
   onOpenChange,
   onSaved,
+  unitSystem,
 }: CropsSheetProps) {
   const [crops, setCrops] = useState<Crop[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -113,7 +122,12 @@ export function CropsSheet({
       growthDays: String(crop.growthDays),
       blackoutDays: String(crop.blackoutDays),
       seedRate:
-        crop.seedRateOzPerTray == null ? "" : String(crop.seedRateOzPerTray),
+        crop.seedRateOzPerTray == null
+          ? ""
+          : unitSystem === "metric"
+            ? String(grams(crop.seedRateOzPerTray))
+            : String(crop.seedRateOzPerTray),
+      seedRateDirty: false,
     });
     setError(null);
   }
@@ -128,7 +142,7 @@ export function CropsSheet({
           draft.name,
           Number(draft.growthDays),
           Number(draft.blackoutDays),
-          Number(draft.expectedYieldOz),
+          typedOunces(draft.expectedYieldOz, unitSystem),
         );
         await load();
         setDraft(null);
@@ -152,14 +166,20 @@ export function CropsSheet({
         );
         await load();
       }
-      const value = rateFieldToValue(draft.seedRate);
-      if (value !== null && !Number.isFinite(value)) {
-        setError("seed_rate_oz_per_tray must be a finite number");
-        return;
-      }
-      if (value !== crop.seedRateOzPerTray) {
-        await updateCropSeedRate(crop.id, value);
-        await load();
+      // UNITS J6-R6 REOPEN A - an untouched field is never parsed and never
+      // sent. The metric prefill is String(grams(oz)); typedOunces(that) is
+      // not the stored ounce, so only a keystroke earns update_crop_seed_rate.
+      // INPUT A stands inside the branch: a typed gram converts as typed.
+      if (draft.seedRateDirty) {
+        const value = rateFieldToValue(draft.seedRate, unitSystem);
+        if (value !== null && !Number.isFinite(value)) {
+          setError("seed_rate_oz_per_tray must be a finite number");
+          return;
+        }
+        if (value !== crop.seedRateOzPerTray) {
+          await updateCropSeedRate(crop.id, value);
+          await load();
+        }
       }
       setDraft(null);
       onSaved?.();
@@ -240,7 +260,7 @@ export function CropsSheet({
               {draft.mode === "add" ? (
                 <label className="flex flex-col gap-2">
                   <span className="text-sm text-muted-foreground">
-                    Expected yield oz/tray
+                    {`Expected yield ${perTrayUnit(unitSystem)}`}
                   </span>
                   <input
                     type="text"
@@ -249,23 +269,27 @@ export function CropsSheet({
                     onChange={(e) =>
                       setDraft({ ...draft, expectedYieldOz: e.target.value })
                     }
-                    aria-label="Expected yield ounces per tray"
+                    aria-label={`Expected yield ${perTrayUnit(unitSystem)}`}
                     className={`${FIELD} text-center text-2xl tabular-nums`}
                   />
                 </label>
               ) : (
                 <label className="flex flex-col gap-2">
                   <span className="text-sm text-muted-foreground">
-                    Seed rate (oz per tray). Leave blank for no proposal.
+                    {`Seed rate (${perTrayUnit(unitSystem)}). Leave blank for no proposal.`}
                   </span>
                   <input
                     type="text"
                     inputMode="decimal"
                     value={draft.seedRate}
                     onChange={(e) =>
-                      setDraft({ ...draft, seedRate: e.target.value })
+                      setDraft({
+                        ...draft,
+                        seedRate: e.target.value,
+                        seedRateDirty: true,
+                      })
                     }
-                    aria-label="Seed rate ounces per tray"
+                    aria-label={`Seed rate ${perTrayUnit(unitSystem)}`}
                     className={`${FIELD} text-center text-2xl tabular-nums`}
                   />
                 </label>
@@ -318,7 +342,7 @@ export function CropsSheet({
                         </span>
                       </span>
                       <span className="tabular-nums text-muted-foreground">
-                        {formatRate(crop.seedRateOzPerTray)}
+                        {formatRate(crop.seedRateOzPerTray, unitSystem)}
                       </span>
                     </button>
                   </li>

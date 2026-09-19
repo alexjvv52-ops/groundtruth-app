@@ -86,6 +86,23 @@ pub fn symbol_for(code: &str) -> String {
         .unwrap_or_else(|| lower.to_uppercase())
 }
 
+/// PRINT-C (EVIDENCE C). The ASCII money sentence: ISO code, one space, the
+/// amount — `ZAR 180.00`, never `R180.00`, never a glyph. Health M1 (and so
+/// the evidence paste and the dock money card), the Collect rows, the
+/// wholesale confirm and trail lines and the duplicate-income warning print
+/// through this and nothing else; `symbol_for` stays the screen glyph. Same
+/// digits the old `attention::dollars` made: whole units by integer division,
+/// cents by `% 100` with the sign dropped. Every caller passes
+/// `farm_currency(conn)`, which never returns an empty or unsealed code.
+pub fn code_amount(code: &str, cents: i64) -> String {
+    format!(
+        "{} {}.{:02}",
+        code.trim().to_ascii_uppercase(),
+        cents / 100,
+        (cents % 100).abs()
+    )
+}
+
 fn choices() -> Vec<CurrencyChoice> {
     SEALED
         .iter()
@@ -297,5 +314,23 @@ mod tests {
         );
         let ok = set_farm_pay_instructions(&conn, &"x".repeat(120)).unwrap();
         assert_eq!(ok.as_deref().map(|s| s.chars().count()), Some(120));
+    }
+
+    #[test]
+    fn currency_code_amount_prints_ascii_code_then_amount_for_every_sealed_row() {
+        assert_eq!(code_amount("zar", 18000), "ZAR 180.00");
+        assert_eq!(code_amount("usd", 5), "USD 0.05");
+        assert_eq!(code_amount(" thb ", 123_456), "THB 1234.56");
+        assert_eq!(
+            code_amount("eur", 1600),
+            "EUR 16.00",
+            "the code, never the glyph"
+        );
+        for (code, _, _) in SEALED {
+            let line = code_amount(code, 1234);
+            assert!(line.is_ascii(), "{line} is not ASCII");
+            assert!(line.starts_with(&code.to_ascii_uppercase()), "{line}");
+            assert!(line.ends_with(" 12.34"), "{line}");
+        }
     }
 }

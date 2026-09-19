@@ -66,6 +66,7 @@ fn m1_for(conn: &Connection) -> CheckStatus {
     let inputs = CheckInputs {
         money,
         leftover_owed,
+        currency: "usd".into(),
         ..CheckInputs::default()
     };
     severity_for("M1", None, NOW, &inputs)
@@ -91,7 +92,7 @@ fn owed_lo_minted_unpaid_listing_is_owed_by_its_cents() {
     assert_eq!(s.severity, Severity::Degraded, "{}", s.sentence);
     assert_eq!(
         s.sentence,
-        "M1 Owed to you — $7.00 across 1 leftover listing. Collect the oldest on the Money tab."
+        "M1 Owed to you — USD 7.00 across 1 leftover listing. Collect the oldest on the Money tab."
     );
 }
 #[test]
@@ -174,7 +175,7 @@ fn owed_lo_wholesale_delivered_unpaid_still_counts_and_joins_leftover() {
     assert_eq!(s.severity, Severity::Degraded, "{}", s.sentence);
     assert_eq!(
         s.sentence,
-        "M1 Owed to you — $12.00 across 1 delivery and 1 leftover listing, delivered today. \
+        "M1 Owed to you — USD 12.00 across 1 delivery and 1 leftover listing, delivered today. \
          Collect the oldest on the Money tab."
     );
 }
@@ -187,13 +188,14 @@ fn owed_lo_m1_wording_holds_and_leftover_alone_never_escalates() {
             count: 3,
             cents: 123_456,
         },
+        currency: "usd".into(),
         ..CheckInputs::default()
     };
     let s = severity_for("M1", None, NOW, &big);
     assert_eq!(s.severity, Severity::Degraded, "{}", s.sentence);
     assert_eq!(
         s.sentence,
-        "M1 Owed to you — $1234.56 across 3 leftover listings. \
+        "M1 Owed to you — USD 1234.56 across 3 leftover listings. \
          Collect the oldest on the Money tab."
     );
     // An unpriced wholesale debt beside leftover: still never a fake total.
@@ -215,10 +217,11 @@ fn owed_lo_m1_wording_holds_and_leftover_alone_never_escalates() {
             count: 1,
             cents: 700,
         },
+        currency: "usd".into(),
         ..CheckInputs::default()
     };
     let s = severity_for("M1", None, NOW, &unpriced);
-    assert!(!s.sentence.contains('$'), "no fake total: {}", s.sentence);
+    assert!(!s.sentence.contains("USD"), "no fake total: {}", s.sentence);
     assert!(
         s.sentence
             .contains("1 delivery and 1 leftover listing, value partly unpriced"),

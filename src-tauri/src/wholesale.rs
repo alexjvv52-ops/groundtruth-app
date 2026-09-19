@@ -248,6 +248,10 @@ pub struct WholesaleOrderView {
     pub payment_link_id: Option<String>,
     pub payment_link_url: Option<String>,
     pub payment_link_minted_at: Option<String>,
+    /// LINK-CODE (VIEW A). The ISO code the row's Payment Link was minted
+    /// in, read at list time from the live wholesale.link_minted event.
+    /// Never stored; None when no link was minted.
+    pub minted_currency: Option<String>,
 }
 
 /// C-2 (SOP-2): one pack per venue for a harvest date. Read-only.
@@ -1044,12 +1048,13 @@ pub fn pay_amount_line_on(
     }
     let delta = (amount_cents - total).abs();
     let direction = if amount_cents < total { "less" } else { "more" };
+    let currency = crate::currency::farm_currency(conn)?;
     Ok(Some(format!(
         "This order is priced at {}. You are recording {} — {} {} than the \
          order. Recording it marks the order paid in full and it stops being owed.",
-        crate::attention::dollars(total),
-        crate::attention::dollars(amount_cents),
-        crate::attention::dollars(delta),
+        crate::currency::code_amount(&currency, total),
+        crate::currency::code_amount(&currency, amount_cents),
+        crate::currency::code_amount(&currency, delta),
         direction
     )))
 }
@@ -1079,10 +1084,11 @@ pub fn bad_debt_confirm_line(conn: &Connection, order_id: &str) -> Result<Option
     let Some(total) = order.priced_total_cents else {
         return Ok(None);
     };
+    let currency = crate::currency::farm_currency(conn)?;
     Ok(Some(format!(
         "Write off {} from {} as bad debt? The delivery stands and the \
          trays stay committed. No payment is recorded. This cannot be undone.",
-        crate::attention::dollars(total),
+        crate::currency::code_amount(&currency, total),
         order.venue_name
     )))
 }
@@ -1118,10 +1124,11 @@ pub fn bad_debt_trail_line(conn: &Connection, order_id: &str) -> Result<Option<S
         return Ok(None);
     };
     let when = crate::reachability::format_mon_d_local(&written_off_on)?;
+    let currency = crate::currency::farm_currency(conn)?;
     Ok(Some(format!(
         "{} written off as bad debt on {}. The trays stay committed and no \
          payment was recorded.",
-        crate::attention::dollars(amount_cents),
+        crate::currency::code_amount(&currency, amount_cents),
         when
     )))
 }
@@ -1930,6 +1937,7 @@ pub fn list_orders(conn: &Connection) -> Result<Vec<WholesaleOrderView>, String>
         .map_err(|e| e.to_string())?;
 
     let today = db::local_date_today();
+    let minted = crate::events::minted_codes(conn, Kind::WholesaleLinkMinted)?;
     let mut out = Vec::new();
     for row in rows {
         let (
@@ -1951,6 +1959,7 @@ pub fn list_orders(conn: &Connection) -> Result<Vec<WholesaleOrderView>, String>
             payment_link_minted_at,
         ) = row.map_err(|e| e.to_string())?;
         let lines = load_lines(conn, &id)?;
+        let minted_currency = minted.get(&id).cloned();
         let priced_total_cents = priced_total(&lines);
         let delivered_age_days = match delivered_on.as_deref() {
             Some(d) if delivered_age_countable(&harvest_date, d, &today) => {
@@ -1984,6 +1993,7 @@ pub fn list_orders(conn: &Connection) -> Result<Vec<WholesaleOrderView>, String>
             payment_link_id,
             payment_link_url,
             payment_link_minted_at,
+            minted_currency,
         });
     }
     Ok(out)

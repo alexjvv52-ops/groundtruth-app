@@ -85,6 +85,12 @@ pub struct CheckInputs {
     /// Deliberately NOT a money debt: MoneyDebts stays wholesale-only, so
     /// Today raises no leftover card (GT-D24-B scope; ruling 3 of OWED-LO).
     pub leftover_owed: crate::leftover::LeftoverOwed,
+    /// PRINT-C (EVIDENCE C): the farm currency code M1 prints its owed amount
+    /// with, through `currency::code_amount` — ASCII code + amount, never a
+    /// glyph. `compute_status` fills it from `currency::farm_currency`; a
+    /// hand-built test input that prints an amount sets it itself. No
+    /// printer-side default: an empty code is a missing read, never "USD".
+    pub currency: String,
     /// B4/M4 — income voids + corrections this quarter with no visible trail row.
     pub untrailed_income_corrections: i64,
     /// "Q3 2026". Empty only in hand-built test inputs.
@@ -737,9 +743,8 @@ fn severity_m1(now_utc: &str, extra: &CheckInputs) -> CheckStatus {
     } else {
         let cents: i64 = debts.iter().map(|d| d.cents).sum::<i64>() + leftover.cents;
         format!(
-            "${}.{:02} across {}",
-            cents / 100,
-            (cents % 100).abs(),
+            "{} across {}",
+            crate::currency::code_amount(&extra.currency, cents),
             items
         )
     };
@@ -1107,6 +1112,11 @@ pub fn compute_status(
     let (mkt_lag, active_venues, last_mkt_write) =
         read_or_fail(h2_facts(conn, farm_dir), &mut failures.marketing);
 
+    // PRINT-C (EVIDENCE C): the code M1 prints the owed amount with. Config,
+    // read like the evidence rows above — an unreadable farm_config fails the
+    // compute rather than rendering a code this farm never picked.
+    let currency = crate::currency::farm_currency(conn)?;
+
     // B4 — the same evaluator Today's money cards come from. Read from live
     // tables, never from the attention table, so a dismissal can quiet Today
     // without ever quieting Health.
@@ -1153,6 +1163,7 @@ pub fn compute_status(
         db_max_seq,
         money,
         leftover_owed,
+        currency,
         untrailed_income_corrections: untrailed,
         quarter_label,
         overdue_trays,

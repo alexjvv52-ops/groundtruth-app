@@ -30,7 +30,7 @@ pub const EXCLUSION_LIST: &[&str] = &[
     "offers: operator-set prices and Stripe ids for the retail door, written outside the event log; no apply_* writes it and nothing reads it during replay",
     "harvest_links: retired harvest Payment Link rows kept by migration; no apply_* writes it and nothing reads it during replay",
     "stripe_config / stripe_cursor: the restricted key, account identity and poll cursors — connection state, not farm truth; no apply_* writes them",
-    "farm_config (INV-A, widened by GT-D26 WORLD-PAY): the farm's display name for the invoice header, the farm currency new mints are billed in, and the farmer's own how-to-pay line — operator-set reference data. No apply_* writes it and nothing reads it during replay, so it is neither copied nor compared",
+    "farm_config (INV-A, widened by GT-D26 WORLD-PAY and GT-D27 UNITS): the farm's display name for the invoice header, the farm currency new mints are billed in, the farmer's own how-to-pay line, and the display system this desk prints mass in — operator-set reference data. No apply_* writes it and nothing reads it during replay, so it is neither copied nor compared",
     "cost_events / mileage_trips / assets / income_events row-level BEFORE INSERT triggers are dropped on the replay database only (they read date('now','localtime')); the live database keeps them, and the same rules are enforced in Rust by validate_cost_event / validate_mileage_event / validate_asset_event / validate_income_event inside every apply_*",
 ];
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { CostCategory, CostPerTrayOutcome } from "@/farm/types";
-import { costPerTray, listCostCategories } from "@/farm/api";
+import type { CostCategory, CostPerTrayOutcome, FarmCurrencyView } from "@/farm/types";
+import { costPerTray, farmCurrency, listCostCategories } from "@/farm/api";
 import { formatCents } from "@/farm/dollars";
 import { localToday } from "@/farm/dates";
 import {
@@ -38,7 +38,7 @@ const WINDOW_CHIPS: { id: WindowChoice; label: string }[] = [
   { id: "custom", label: "Pick dates" },
 ];
 
-function MethodBlock({ method }: { method: CostPerTrayOutcome["method"] }) {
+function MethodBlock({ method, symbol }: { method: CostPerTrayOutcome["method"]; symbol: string }) {
   return (
     <div className="flex flex-col gap-3">
       <h3 className="text-base font-semibold">How this was worked out</h3>
@@ -62,7 +62,7 @@ function MethodBlock({ method }: { method: CostPerTrayOutcome["method"] }) {
                 key={p.eventId}
                 className="text-sm tabular-nums text-muted-foreground"
               >
-                {p.datePaid} · {p.payee} · {formatCents(p.amountCents)}
+                {p.datePaid} · {p.payee} · {formatCents(p.amountCents, symbol)}
               </li>
             ))}
           </ul>
@@ -107,7 +107,9 @@ export function CostPerTraySheet({
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currency, setCurrency] = useState<FarmCurrencyView | null>(null);
   const today = toYyyyMmDd(localToday());
+  const symbol = currency?.symbol ?? "$";
 
   function resetAll() {
     setOutcome(null);
@@ -123,8 +125,11 @@ export function CostPerTraySheet({
   useEffect(() => {
     if (!open) return;
     resetAll();
-    void listCostCategories()
-      .then(setCategories)
+    void Promise.all([listCostCategories(), farmCurrency()])
+      .then(([cats, cur]) => {
+        setCategories(cats);
+        setCurrency(cur);
+      })
       .catch((err) => setError(errMessage(err)));
   }, [open]);
 
@@ -284,11 +289,11 @@ export function CostPerTraySheet({
               {outcome.kind === "computed" ? (
                 <div className="flex flex-col items-center gap-2 text-center">
                   <p className="text-3xl font-semibold tabular-nums tracking-tight">
-                    {formatCents(Math.round(outcome.figure.centsPerTray))} per
+                    {formatCents(Math.round(outcome.figure.centsPerTray), symbol)} per
                     tray
                   </p>
                   <p className="text-base text-muted-foreground tabular-nums">
-                    {formatCents(outcome.figure.totalPaidCents)} ÷{" "}
+                    {formatCents(outcome.figure.totalPaidCents, symbol)} ÷{" "}
                     {outcome.figure.totalTrays} trays
                   </p>
                 </div>
@@ -301,7 +306,7 @@ export function CostPerTraySheet({
                 </p>
               )}
 
-              <MethodBlock method={outcome.method} />
+              <MethodBlock method={outcome.method} symbol={symbol} />
 
               <Button
                 type="button"

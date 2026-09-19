@@ -41,7 +41,7 @@ fn farm_dir(label: &str) -> PathBuf {
 }
 
 fn s1(venue: &str, amount_cents: i64, date_received: &str) -> String {
-    let amount = attention::dollars(amount_cents);
+    let amount = crate::currency::code_amount("usd", amount_cents);
     let d = reachability::format_mon_d_local(date_received).unwrap();
     format!(
         "{venue} already has {amount} recorded on {d}. Recording this again makes two income rows for one payment."

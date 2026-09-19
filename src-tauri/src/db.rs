@@ -11,7 +11,7 @@ pub struct FarmPaths {
     pub snapshots_dir: PathBuf,
 }
 
-pub const SCHEMA_VERSION: i32 = 45;
+pub const SCHEMA_VERSION: i32 = 46;
 
 /// Frozen tray id seeded into `open_v1_in_memory` (Phase 1 Ruling 2).
 #[cfg(test)]
@@ -2273,6 +2273,23 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
         conn.pragma_update(None, "user_version", 45)
             .map_err(|e| e.to_string())?;
         version = 45;
+    }
+    if version < 46 {
+        // GT-D27 UNITS (J1 UNITS-STORE): the display system this desk prints
+        // mass in joins farm_config (v41) — config class, one row, written by
+        // Settings on the PC, never by an apply_*; declared on
+        // projection::verify::EXCLUSION_LIST. The file keeps weighing in
+        // ounces: no column is rewritten and no event carries a unit.
+        // No Kind changes, so the event_log triggers are not reinstalled (v42).
+        // Idempotent ALTER: open_in_memory fixtures rewind user_version after a
+        // current-schema open, so this column may already exist.
+        if !farm_config_has_column(conn, "units")? {
+            conn.execute_batch("ALTER TABLE farm_config ADD COLUMN units TEXT;")
+                .map_err(|e| e.to_string())?;
+        }
+        conn.pragma_update(None, "user_version", 46)
+            .map_err(|e| e.to_string())?;
+        version = 46;
     }
     if version > SCHEMA_VERSION {
         return Err(format!(

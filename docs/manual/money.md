@@ -3,8 +3,12 @@
 Money is the register: wholesale, leftover, cash in, cash out. It is
 not Books (Books is a lens on this same register). Unpaid stays
 unpaid. Unpriced stays unpriced. A payment link is not a payment.
-Every figure here, every bill and every payment link uses the farm
-currency set on Settings - changing it converts nothing.
+Every figure here and every bill uses the farm currency set on
+Settings - changing it converts nothing. Every new payment link
+Groundtruth mints is billed in that currency. A link already minted
+keeps the code it was minted in; Money prints that code on the link
+line, and changing Settings does not rewrite an existing link. A row
+with no readable mint code prints the bare label Payment link.
 
 ## If something is wrong
 
@@ -53,9 +57,10 @@ Heading only. The converting taps are on the row.
 
 Writes nothing. The key is config on this machine, not an event.
 
-The sheet names the farm currency: every payment link Groundtruth
-mints is billed in it, and if Stripe refuses that currency for the
-account the mint refuses and nothing is written.
+The sheet names the farm currency: every new payment link
+Groundtruth mints is billed in it, and if Stripe refuses that
+currency for the account the mint refuses and nothing is written. A
+link already minted keeps the code it was minted in.
 
 - **Continue** - preview only.
 - **Connect this account** - stores the key.
@@ -66,10 +71,6 @@ account the mint refuses and nothing is written.
 ### Invoice bill
 
 - **Print** / **Close** - writes nothing.
-- **Copy bill** - writes nothing - the bill as text on the clipboard,
-  Pay by: and Pay online: included when set.
-- **Email bill** - writes nothing - opens your mail app with the bill
-  as the body; you type the address.
 - Under **Total**: **Pay by:** and the How to pay line from Settings,
   when one is saved. None saved, nothing printed. **Pay online:** and
   the link follow when a link exists.
@@ -79,8 +80,6 @@ account the mint refuses and nothing is written.
 ### New order
 
 - **Same as last order** - writes nothing - fills the draft.
-- **From standing** - writes nothing - drafts this week's lines from
-  the venue's standing; edit anything, then Record order writes.
 - **Add variety** - writes nothing.
 - **Record order** / **Record anyway** - `wholesale.ordered`.
 

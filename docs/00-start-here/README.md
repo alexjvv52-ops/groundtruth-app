@@ -3,10 +3,10 @@ This page is for the person at the desk. It is not a feature tour and it is
 not an architecture lecture. Read it once, then open the app.
 ## Before you open it
 Groundtruth runs on your Windows machine. There is no account and nothing
-leaves the computer unless you export it yourself. Download the installer
-marked **Latest** from the Releases page (the root `README.md` has the exact
-steps), or build it from source. Windows will warn you about the installer
-because it is not code-signed. That is expected.
+leaves the computer unless you export it yourself. Right now it is built
+from source (`npm install`, then `npm run tauri build`); the root `README.md`
+has the exact steps. Windows will warn you about the installer because it
+is not code-signed. That is expected.
 ## The first ten minutes
 1. **Open the app.** It lands on **Today**. On an empty farm, Today shows
    "Start here" over five cards: add your first venue, record a standing
